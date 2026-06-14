@@ -17,3 +17,4 @@ vendor/
 
 # Build
 build/
+*.tar.gz
