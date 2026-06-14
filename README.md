@@ -58,3 +58,100 @@ Chaos testing system that simulates real-world failures:
 ---
 
 ## 🔁 System Flow
+
++-------------------+
+    |   Event Input     |
+    +---------+---------+
+              |
+              v
+    +-------------------+
+    |   Storage Layer   |
+    |  (SQLite + WAL)   |
+    +---------+---------+
+              |
+              v
+    +-------------------+
+    | Reduction Engine  |
+    | deterministic L3  |
+    +---------+---------+
+              |
+              v
+    +-------------------+
+    |   Graph State     |
+    | STABLE / BROKEN   |
+    +-------------------+
+              ^
+              |
+    +-------------------+
+    | Fault Injection   |
+    | Chaos Testing     |
+    +-------------------+
+
+---
+
+## 🧪 Testing Strategy
+
+PADS v3 uses **chaos-driven validation**:
+
+### Deterministic Tests
+- rebuild consistency
+- duplicate event handling
+- ordering stability
+- replay convergence
+
+### Chaos Tests
+- WAL deletion simulation
+- crash recovery
+- partial writes
+- randomized failure injection
+- multi-run convergence validation
+
+---
+
+## ⚙️ Tech Stack
+
+- Go (core engine)
+- SQLite (modernc.org/sqlite driver)
+- Standard library concurrency primitives
+- Custom fault injection driver
+
+---
+
+## 📂 Project Structure
+
+internal/ ├── chaos/        # chaos & recovery tests ├── storage/      # SQLite abstraction layer ├── reducer/      # deterministic reduction engine ├── fault/        # fault injection driver ├── compiler/     # event ingestion layer ├── resolver/     # symbol resolution ├── symbol/       # symbol system
+
+---
+
+## 🧬 Key Property
+
+> The system is designed so that repeated execution over the same event log always converges to the same final graph state, even under failure conditions.
+
+---
+
+## 🧪 Example Guarantee
+
+Even with:
+- random IO failures
+- latency spikes
+- forced statement errors
+- file deletion during runtime
+
+The system still converges to:
+
+STABLE or BROKEN (deterministic outcome)
+
+---
+
+## 📌 Status
+
+✔ Core engine stable  
+✔ Chaos tests passing  
+✔ Fault injection validated  
+✔ Recovery logic verified  
+
+---
+
+## 📜 License
+
+Experimental / research project — no production guarantees.
