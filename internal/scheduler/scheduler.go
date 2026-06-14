@@ -2,9 +2,11 @@ package scheduler
 
 import (
     "fmt"
+    "log"
     "sync"
     "time"
 
+    "pads-v3/internal/agent"
     "pads-v3/internal/engine"
     "pads-v3/internal/storage"
 )
@@ -31,11 +33,21 @@ func (s *Scheduler) Start() {
     s.running = true
     s.mu.Unlock()
 
+    mockAgent := agent.MockAgent{}
+
     for s.isRunning() {
+        log.Printf("scheduler: running engine cycle")
         err := engine.RunOnce(s.db)
         if err != nil {
-            fmt.Printf("scheduler: %v\n", err)
+            fmt.Printf("scheduler: engine error: %v\n", err)
         }
+
+        log.Printf("scheduler: running agent cycle")
+        err = agent.RunOnce(s.db, mockAgent)
+        if err != nil {
+            fmt.Printf("scheduler: agent error: %v\n", err)
+        }
+
         time.Sleep(s.interval)
     }
 }
