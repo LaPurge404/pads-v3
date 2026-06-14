@@ -1,11 +1,14 @@
-# PADS v3 — Exécution déterministe et système de débogage résistant au chaos
+# PADS v3 — Hermetic CI Engine & Deterministic Replay System
 
-PADS v3 est un système expérimental basé sur Go conçu pour valider la reconstruction
-d'état déterministe dans des environnements sujets aux défaillances à l'aide de la
-relecture d'événements, des boucles de réduction et des tests d'injection de chaos.
+PADS v3 est un moteur de supervision événementiel déterministe pour le
+développement logiciel. Il combine un graphe de dépendances (L1), un
+journal d'événements immuable (L2) et une projection d'état (L3) pour
+fournir une base fiable à des agents d'intelligence artificielle.
 
-L'idée de base : le système doit toujours converger vers le même état final, même
-sous la corruption, les crashs ou les défaillances randomisées.
+**Version** : v0.2.1 (stable-ci)
+**Licence** : Expérimental / Recherche
+
+---
 
 ## 🎯 Objectifs fondamentaux
 
@@ -13,109 +16,137 @@ PADS v3 valide qu'un système peut :
 - Reconstruire l'état de manière déterministe à partir des journaux d'événements
 - Maintenir la cohérence de l'état du graphe L3 à travers les reconstructions
 - Survivre à la corruption WAL et à la perte de fichiers
-- Gérer les exécutions randomisées et les échecs IO
-- Converger vers un état final stable sous des boucles de réduction répétées
 - Exécuter du code Go réel dans un environnement sandboxé et reproductible
+- Converger vers un état final stable sous des boucles de réduction répétées
+- **Rejouer un run de manière déterministe et reproductible (CI-grade)**
+
+---
 
 ## 🏗️ Architecture du système
 
-Le système est composé de cinq couches principales :
+```
 
-1. **Couche d'événement** : stocke les événements d'exécution brute et les relations.
-   `events` → résultats d'exécution, `event_nodes` → mappage entre événements et nœuds.
+L0 (Code Source) → L1 (Graphe) → L2 (Event Log) → Reducer → L3 (State Projection)
 
-2. **Couche de stockage (SQLite)** : moteur de persistance responsable de la gestion
-   du schéma, de la cohérence transactionnelle et du stockage d'état graphique.
-   Backend : `modernc.org/sqlite`.
+Hermetic Execution Engine (CI Sandbox)
 
-3. **Moteur de réduction (Core Logic)** : système de reconstruction de l'état
-   déterministe. Rejoue les journaux d'événements, construit `graph_state`,
-   assure la convergence vers `STABLE` ou `BROKEN`. Cette couche est purement
-   déterministe.
-
-4. **Execution Engine** : moteur d'exécution sandboxé qui exécute `go test` sur
-   les fichiers source associés aux nœuds `UNTESTED`. Il initialise un module Go
-   temporaire (`go mod init tempmod`) pour garantir une exécution reproductible
-   et isolée. Les résultats sont injectés dans L2 sous forme d'événements
-   `OS_EXEC_RESULT`.
-
-5. **Couche d'injection de faute (Chaos Engine)** : simule les défaillances du
-   monde réel (latence, erreurs IO, échecs d'écriture, conditions SQLITE_BUSY).
-   Utilisé exclusivement pour la validation de la robustesse.
-
-## 🔁 Flux de système
+utilisé par Replay + CI Gate
 
 ```
 
-Événements (L2) → Stockage SQLite → Moteur de réduction → Graph State (L3)
-↑
-Execution Engine
-↑
-Code source Go
+### Couches
 
-```
+| Couche | Nom | Rôle |
+|--------|-----|------|
+| L0 | Code Source | Fichiers `.go` sur disque |
+| L1 | Execution Graph | Nœuds et arêtes extraits par le Compiler |
+| L2 | Event Log | Journal immuable d'événements (append-only) |
+| L3 | State Projection | État dérivé de chaque nœud (STABLE/BROKEN/UNTESTED) |
 
-## 🧪 Stratégie de test
+### Composants
 
-PADS v3 utilise la validation pilotée par le chaos.
+| Package | Rôle |
+|---------|------|
+| `internal/storage` | Accès SQLite avec PRAGMA WAL, transactions, wrappers |
+| `internal/compiler` | Ingestion AST → L1 (nœuds, arêtes, hash de signature) |
+| `internal/reducer` | Boucle de réduction L2 → L3 (fonction pure, point fixe) |
+| `internal/engine` | Hermetic Execution Engine 3 phases (Snapshot, Execution, Commit) |
+| `internal/replay` | **Hermetic Replay Engine** – exécution isolée dans un workspace temporaire |
+| `internal/ci` | **CI Gate** – validateur d'invariants en lecture seule sur la projection L3 |
+| `internal/chaos` | Suite de tests de chaos (crash, corruption, désordre) |
+| `internal/agent` | Agent Runtime avec contrat Task/Plan/Action/Executor |
+| `internal/scheduler` | Boucle daemon continue (Engine → Agent → Executor) |
 
-### Tests Déterministes
-- Reconstruction complète à partir de zéro
-- Duplication d'événements
-- Stabilité de l'ordre des événements
-- Validation de la convergence par rejeu
+---
 
-### Tests de chaos
-- Simulation de suppression de fichiers WAL
-- Validation de récupération après crash
-- Écritures partielles et état corrompu
-- Injection de défaillance IO aléatoire
-- Validation de convergence multi-exécutions
+## 🔁 Hermetic Replay Engine
 
-## ⚙️ Tech Stack
+Le Replay Engine garantit qu'un run peut être rejoué de manière déterministe :
 
-- Go (moteur de base)
-- SQLite (`modernc.org/sqlite`)
-- Primitives de concurrence de la bibliothèque standard
-- Driver d'injection de fautes personnalisé
+1. **Capture de snapshot** : contenu des fichiers, hash, nœuds associés
+2. **Workspace temporaire isolé** : création d'un module Go jetable
+3. **Environnement contrôlé** : `GOCACHE`, `GOMODCACHE`, `GOPATH` isolés
+4. **Exécution reproductible** : `go test -count=1 ./...`
+5. **Événement L2** : un événement `REPLAY_RESULT` est émis pour audit
+
+---
+
+## 🧪 CI Gate
+
+Le CI Gate est un validateur passif qui vérifie les invariants système
+sur la projection L3 :
+
+- Aucun nœud `BROKEN` ne doit persister
+- Chaque nœud de L1 doit avoir un état dans L3
+
+Il n'exécute jamais le moteur – il se contente de lire l'état.
+
+---
+
+## 🧬 Propriétés clés
+
+- **Déterminisme** : même L2 → même L3 (validé par tests de convergence)
+- **Idempotence** : `INSERT OR IGNORE` partout, transactions atomiques
+- **Immuabilité** : L2 est append-only
+- **Herméticité** : le Replay Engine n'a aucune dépendance au système de fichiers hôte
+- **Robustesse** : validée par la suite de tests de chaos
+
+---
 
 ## 📁 Structure du projet
 
 ```
 
 internal/
-├── chaos/     → tests de chaos & récupération
-├── storage/   → couche d'abstraction SQLite
-├── reducer/   → moteur de réduction déterministe
-├── fault/     → driver d'injection de fautes
-├── resolver/  → couche de résolution d'événements
-├── symbol/    → utilitaires symboliques
-├── compiler/  → ingestion AST → graphe L1
-└── engine/    → moteur d'exécution sandboxé
+ storage/       → SQLite, schéma, wrappers
+ compiler/      → AST → L1 (ingestion déterministe)
+ reducer/       → L2 → L3 (fonction pure)
+ engine/        → Exécution 3 phases (Snapshot, Execution, Commit)
+ replay/        → Hermetic Replay Engine
+ ci/            → CI Gate (validation invariants)
+ agent/         → Agent Runtime (Task, Plan, Action, Executor)
+ executor/      → Exécuteur des plans d'action
+ scheduler/     → Boucle daemon (Engine → Agent → Executor)
+ chaos/         → Tests de chaos et résilience
+ symbol/        → Table de symboles (lookup)
+ resolver/      → Résolution des appels (non-régression)
 
 ```
 
-## 🧬 Propriété clé
+---
 
-Le système garantit que l'exécution répétée sur le même journal d'événements
-converge toujours vers le même état de graphe final, même sous échecs IO,
-pics de latence, erreurs d'exécution forcées ou suppression de fichier
-pendant l'exécution.
+## 🚀 Exécution
 
-## 🧪 Garantie de convergence
+```bash
+# Mode one-shot
+./pads -db test_project/pads.db -ingest test_project
 
-Malgré les conditions de chaos, le système converge toujours vers `STABLE`
-ou `BROKEN`. C'est l'invariant principal de PADS v3.
+# Mode daemon
+./pads -db test_project/pads.db -ingest test_project -daemon -interval 30s
+```
 
-## 📌 Statut
+---
 
-- ✔ Moteur de réduction de noyau stable
-- ✔ Tests de chaos validés
-- ✔ Injection de fautes opérationnelle
-- ✔ Mécanismes de récupération vérifiés
-- ✔ Execution Engine avec sandbox Go reproductible
-- ✔ Boucle de réalité fermée (ingestion → exécution → feedback → convergence)
 
-## 📜 Licence
+```bash
+go test ./... -v -timeout 120s
+```
+
+Tous les packages ont des tests unitaires. La suite de chaos (internal/chaos) valide
+la résilience du système face aux crashs, corruptions et désordres.
+
+---
+
+
+       ✔ Moteur de réduction de noyau stable
+       ✔ Tests de chaos validés
+       ✔ Hermetic Execution Engine 3 phases
+       ✔ Hermetic Replay Engine avec isolation CI-grade
+       ✔ CI Gate en lecture seule
+       ✔ Agent Runtime avec Executor
+       ✔ Boucle de réalité fermée (ingestion → exécution → feedback → convergence)
+
+---
+
 
 Système expérimental / de recherche — aucune garantie de production.
