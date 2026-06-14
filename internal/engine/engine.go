@@ -2,6 +2,7 @@ package engine
 
 import (
     "fmt"
+    "os"
     "os/exec"
     "path/filepath"
     "strings"
@@ -38,10 +39,9 @@ func RunOnce(db *storage.DB) error {
         return nil // nothing to test
     }
 
-    // 2. For each file, run go test
+    // 2. For each file, run go test from the module root
     for filePath, nodeIDs := range fileMap {
-        dir := filepath.Dir(filePath)
-        exitCode, stderr, err := runGoTest(dir)
+        exitCode, stderr, err := runGoTest(filePath)
         if err != nil {
             exitCode = 1
             stderr = err.Error()
@@ -73,15 +73,17 @@ func RunOnce(db *storage.DB) error {
     return nil
 }
 
-// runGoTest initializes a temporary Go module and runs go test in the directory.
-func runGoTest(dir string) (int, string, error) {
-    // Initialize a temporary Go module to make go test work
-    modInit := exec.Command("go", "mod", "init", "tempmod")
-    modInit.Dir = dir
-    modInit.Run() // ignore error, it may already exist
+// runGoTest finds the Go module root for the given file and runs go test ./... from there.
+func runGoTest(filePath string) (int, string, error) {
+    dir := filepath.Dir(filePath)
+    moduleRoot, err := findModuleRoot(dir)
+    if err != nil {
+        // Fallback: use the directory as is, go test will likely fail
+        moduleRoot = dir
+    }
 
-    cmd := exec.Command("go", "test", ".")
-    cmd.Dir = dir
+    cmd := exec.Command("go", "test", "./...")
+    cmd.Dir = moduleRoot
     output, err := cmd.CombinedOutput()
     if err != nil {
         if exitErr, ok := err.(*exec.ExitError); ok {
@@ -90,4 +92,20 @@ func runGoTest(dir string) (int, string, error) {
         return 1, string(output), err
     }
     return 0, "", nil
+}
+
+// findModuleRoot walks up the directory tree until it finds a go.mod file.
+func findModuleRoot(startDir string) (string, error) {
+    dir := startDir
+    for {
+        goModPath := filepath.Join(dir, "go.mod")
+        if _, err := os.Stat(goModPath); err == nil {
+            return dir, nil
+        }
+        parent := filepath.Dir(dir)
+        if parent == dir {
+            return "", fmt.Errorf("go.mod not found in any parent of %s", startDir)
+        }
+        dir = parent
+    }
 }

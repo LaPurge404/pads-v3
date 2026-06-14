@@ -7,15 +7,19 @@ import (
 "os"
 "os/signal"
 "strings"
+"time"
 
 "pads-v3/internal/compiler"
 "pads-v3/internal/engine"
+"pads-v3/internal/scheduler"
 "pads-v3/internal/storage"
 )
 
 func main() {
 dbPath := flag.String("db", "pads.db", "path to SQLite database")
 ingestDir := flag.String("ingest", "", "directory of Go files to ingest")
+daemonMode := flag.Bool("daemon", false, "run in daemon mode with continuous execution")
+interval := flag.Duration("interval", 30*time.Second, "interval between engine runs in daemon mode")
 flag.Parse()
 
 // Ouvrir la base de données
@@ -45,8 +49,22 @@ log.Printf("ingested %s: %d nodes, %d edges", path, res.NodesAdded, res.EdgesAdd
 }
 }
 
-// Lancer le moteur d'exécution une première fois
-log.Println("Running engine...")
+if *daemonMode {
+// Mode daemon : boucle continue avec le scheduler
+log.Printf("Starting daemon mode (interval: %v)...", *interval)
+sched := scheduler.New(db, *interval)
+go sched.Start()
+defer sched.Stop()
+
+// Attendre un signal pour arrêter
+log.Println("PADS daemon is running. Press Ctrl+C to stop.")
+sigCh := make(chan os.Signal, 1)
+signal.Notify(sigCh, os.Interrupt)
+<-sigCh
+log.Println("Shutting down daemon.")
+} else {
+// Mode one-shot : exécution unique
+log.Println("Running engine once...")
 if err := engine.RunOnce(db); err != nil {
 log.Printf("engine: %v", err)
 }
@@ -63,11 +81,5 @@ var id, state string
 rows.Scan(&id, &state)
 fmt.Printf("  %s -> %s\n", id, state)
 }
-
-// Attendre un signal pour arrêter
-log.Println("PADS is running. Press Ctrl+C to stop.")
-sigCh := make(chan os.Signal, 1)
-signal.Notify(sigCh, os.Interrupt)
-<-sigCh
-log.Println("Shutting down.")
+}
 }

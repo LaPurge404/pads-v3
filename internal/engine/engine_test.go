@@ -10,14 +10,24 @@ import (
 )
 
 func TestRunOnce(t *testing.T) {
-    // Create a temporary Go project
+    // Create a temporary Go project with a valid module
     tmpDir := t.TempDir()
+
+    // Create go.mod
+    goMod := `module testmod
+
+go 1.24
+`
+    os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644)
+
+    // Create add.go
     src := `package main
 func Add(a, b int) int { return a + b }
 `
     testFile := filepath.Join(tmpDir, "add.go")
     os.WriteFile(testFile, []byte(src), 0644)
 
+    // Create add_test.go
     testSrc := `package main
 import "testing"
 func TestAdd(t *testing.T) {
@@ -28,9 +38,6 @@ func TestAdd(t *testing.T) {
 `
     testTestFile := filepath.Join(tmpDir, "add_test.go")
     os.WriteFile(testTestFile, []byte(testSrc), 0644)
-
-    // Initialize go module
-    // (go test needs a module, but we skip for now)
 
     // Setup PADS database
     dbPath := filepath.Join(tmpDir, "pads.db")
@@ -76,4 +83,11 @@ func TestAdd(t *testing.T) {
         t.Error("expected nodes to be inserted into graph_state")
     }
     t.Logf("graph_state now has %d entries", stateCount)
+
+    // Verify the state is STABLE (because go test should pass)
+    var stableCount int
+    db.QueryRow(`SELECT COUNT(*) FROM graph_state WHERE state = 'STABLE'`).Scan(&stableCount)
+    if stableCount != 2 {
+        t.Errorf("expected 2 STABLE nodes, got %d", stableCount)
+    }
 }
