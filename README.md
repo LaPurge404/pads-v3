@@ -1,157 +1,248 @@
-# PADS v3 — Predictive Analysis & Debugging System
+🧠 PADS v3 — Deterministic Execution & Chaos-Resilient Debugging System
 
-PADS v3 is a Go-based experimental system designed to build a resilient execution and analysis pipeline with deterministic recovery, chaos testing, and fault-injection validation.
+PADS v3 is an experimental Go-based system designed to validate deterministic state reconstruction under failure-prone environments using event replay, reduction loops, and chaos injection testing.
 
-It focuses on **system robustness under failure conditions**, including:
-- database corruption
-- execution crashes
-- partial event loss
-- randomized fault injection
+The core idea:
 
----
+> The system must always converge to the same final state, even under corruption, crashes, or randomized failures.
 
-## 🚀 Core Goals
 
-PADS v3 aims to validate that a system can:
 
-- Recover deterministically from inconsistent states
-- Maintain L3 graph consistency across rebuilds
-- Handle WAL corruption and file loss
-- Survive randomized runtime failures
-- Converge to a stable state under repeated reduction loops
 
 ---
 
-## 🧠 Architecture Overview
+🎯 Core Objectives
+
+PADS v3 validates that a system can:
+
+Reconstruct state deterministically from event logs
+
+Maintain consistency of L3 graph state across rebuilds
+
+Survive WAL corruption and file loss
+
+Handle randomized execution and IO failures
+
+Converge to a stable final state under repeated reduction loops
+
+
+
+---
+
+🏗️ System Architecture
 
 The system is composed of four main layers:
 
-### 1. Event Layer
-Stores raw execution events and their metadata.
+1. Event Layer
 
-- `events` → execution results
-- `event_nodes` → mapping between events and nodes
+Stores raw execution events and relationships.
 
-### 2. Storage Layer
-Persistent SQLite-based state engine.
+events → execution results
 
-- schema management
-- transactional consistency
-- graph state storage
+event_nodes → mapping between events and nodes
 
-### 3. Reduction Engine
+
+
+---
+
+2. Storage Layer (SQLite)
+
+Persistence engine responsible for:
+
+Schema management
+
+Transactional consistency
+
+Graph state storage (graph_state)
+
+
+Backend: modernc.org/sqlite
+
+
+---
+
+3. Reduction Engine (Core Logic)
+
 Deterministic state reconstruction system.
 
-- processes event logs
-- builds `graph_state`
-- ensures convergence to STABLE or BROKEN states
+Responsibilities:
 
-### 4. Fault Injection Layer
-Chaos testing system that simulates real-world failures:
+Replay event logs
 
-- latency injection
-- IO errors
-- write failures
-- SQLITE_BUSY conditions
-- random execution faults
+Build graph_state
 
----
+Ensure convergence to:
 
-## 🔁 System Flow
+STABLE
 
-+-------------------+
-    |   Event Input     |
-    +---------+---------+
-              |
-              v
-    +-------------------+
-    |   Storage Layer   |
-    |  (SQLite + WAL)   |
-    +---------+---------+
-              |
-              v
-    +-------------------+
-    | Reduction Engine  |
-    | deterministic L3  |
-    +---------+---------+
-              |
-              v
-    +-------------------+
-    |   Graph State     |
-    | STABLE / BROKEN   |
-    +-------------------+
-              ^
-              |
-    +-------------------+
-    | Fault Injection   |
-    | Chaos Testing     |
-    +-------------------+
+BROKEN
+
+
+
+This layer is purely deterministic.
+
 
 ---
 
-## 🧪 Testing Strategy
+4. Fault Injection Layer (Chaos Engine)
 
-PADS v3 uses **chaos-driven validation**:
+Simulates real-world system failures:
 
-### Deterministic Tests
-- rebuild consistency
-- duplicate event handling
-- ordering stability
-- replay convergence
+Latency injection
 
-### Chaos Tests
-- WAL deletion simulation
-- crash recovery
-- partial writes
-- randomized failure injection
-- multi-run convergence validation
+IO errors
 
----
+Write failures
 
-## ⚙️ Tech Stack
+SQLITE_BUSY conditions
 
-- Go (core engine)
-- SQLite (modernc.org/sqlite driver)
-- Standard library concurrency primitives
-- Custom fault injection driver
+Random execution faults
+
+
+Used exclusively for robustness validation.
+
 
 ---
 
-## 📂 Project Structure
+🔁 System Flow
 
-internal/ ├── chaos/        # chaos & recovery tests ├── storage/      # SQLite abstraction layer ├── reducer/      # deterministic reduction engine ├── fault/        # fault injection driver ├── compiler/     # event ingestion layer ├── resolver/     # symbol resolution ├── symbol/       # symbol system
+┌────────────────────────────┐
+            │     Event Input Layer     │
+            │  (execution + metadata)   │
+            └─────────────┬──────────────┘
+                          │
+                          ▼
+            ┌────────────────────────────┐
+            │      SQLite Storage       │
+            │   (WAL + persistence)     │
+            └─────────────┬──────────────┘
+                          │
+                          ▼
+            ┌────────────────────────────┐
+            │   Reduction Engine (L3)   │
+            │   deterministic replay    │
+            └─────────────┬──────────────┘
+                          │
+                          ▼
+            ┌────────────────────────────┐
+            │      Graph State L3       │
+            │   STABLE / BROKEN         │
+            └─────────────┬──────────────┘
+                          ▲
+                          │
+            ┌────────────────────────────┐
+            │   Fault Injection Layer    │
+            │   (Chaos Testing Engine)   │
+            └────────────────────────────┘
+
 
 ---
 
-## 🧬 Key Property
+🧪 Testing Strategy
 
-> The system is designed so that repeated execution over the same event log always converges to the same final graph state, even under failure conditions.
+PADS v3 uses chaos-driven validation.
+
+Deterministic Tests
+
+Full rebuild from scratch consistency
+
+Duplicate event handling
+
+Event ordering stability
+
+Replay convergence validation
+
+
+Chaos Tests
+
+WAL file deletion simulation
+
+Crash recovery validation
+
+Partial writes and corrupted state
+
+Random IO failure injection
+
+Multi-run convergence validation
+
+
 
 ---
 
-## 🧪 Example Guarantee
+⚙️ Tech Stack
 
-Even with:
-- random IO failures
-- latency spikes
-- forced statement errors
-- file deletion during runtime
+Go (core engine)
 
-The system still converges to:
+SQLite (modernc.org/sqlite)
 
-STABLE or BROKEN (deterministic outcome)
+Standard library concurrency primitives
 
----
+Custom fault injection driver
 
-## 📌 Status
 
-✔ Core engine stable  
-✔ Chaos tests passing  
-✔ Fault injection validated  
-✔ Recovery logic verified  
 
 ---
 
-## 📜 License
+📁 Project Structure
 
-Experimental / research project — no production guarantees.
+internal/
+├── chaos/       → chaos & recovery tests
+├── storage/     → SQLite abstraction layer
+├── reducer/     → deterministic reduction engine
+├── fault/       → fault injection driver
+├── resolver/    → event resolution layer
+├── symbol/      → symbolic utilities
+
+
+---
+
+🧬 Key Property
+
+The system guarantees:
+
+> Repeated execution over the same event log always converges to the same final graph state.
+
+
+
+Even under:
+
+IO failures
+
+Latency spikes
+
+Forced execution errors
+
+File deletion during runtime
+
+
+
+---
+
+🧪 Convergence Guarantee
+
+Despite chaos conditions, the system always converges to:
+
+STABLE or BROKEN
+
+This is the core invariant of PADS v3.
+
+
+---
+
+📌 Status
+
+✔ Core reduction engine stable
+
+✔ Chaos testing validated
+
+✔ Fault injection operational
+
+✔ Recovery mechanisms verified
+
+
+
+---
+
+📜 License
+
+Experimental / research system — no production guarantees.
