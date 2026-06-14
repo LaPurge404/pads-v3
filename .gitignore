@@ -1,0 +1,19 @@
+# Binaries
+bin/
+*.exe
+*.out
+
+# Test artifacts
+*.test
+*.db
+*.sqlite*
+*.log
+
+# Go vendor
+vendor/
+
+# OS
+.DS_Store
+
+# Build
+build/
