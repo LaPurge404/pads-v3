@@ -1,11 +1,11 @@
-# PADS v3 — Hermetic CI Engine & Deterministic Replay System
+# PADS v3 — DAG-Driven Deterministic CI Engine
 
 PADS v3 est un moteur de supervision événementiel déterministe pour le
 développement logiciel. Il combine un graphe de dépendances (L1), un
 journal d'événements immuable (L2) et une projection d'état (L3) pour
 fournir une base fiable à des agents d'intelligence artificielle.
 
-**Version** : v0.2.1 (stable-ci)
+**Version** : v0.4-dag-stable
 **Licence** : Expérimental / Recherche
 
 ---
@@ -18,7 +18,7 @@ PADS v3 valide qu'un système peut :
 - Survivre à la corruption WAL et à la perte de fichiers
 - Exécuter du code Go réel dans un environnement sandboxé et reproductible
 - Converger vers un état final stable sous des boucles de réduction répétées
-- **Rejouer un run de manière déterministe et reproductible (CI-oriented)**
+- **Orchestrer des pipelines CI multi-jobs avec un DAG causal déterministe**
 
 ---
 
@@ -26,12 +26,7 @@ PADS v3 valide qu'un système peut :
 
 ```
 
-L0 (Code Source) → L1 (Graphe) → L2 (Event Log) → Reducer → L3 (State Projection)
-
-Hermetic Execution Layer (isolated runtime)
-
-utilisé uniquement par le Replay Engine
-(le CI Gate reste read-only)
+Job Spec → DAG Builder → DAG Executor (deterministic) → Event Stream → WAL → Causal Engine
 
 ```
 
@@ -51,35 +46,26 @@ utilisé uniquement par le Replay Engine
 | `internal/storage` | Accès SQLite avec PRAGMA WAL, transactions, wrappers |
 | `internal/compiler` | Ingestion AST → L1 (nœuds, arêtes, hash de signature) |
 | `internal/reducer` | Boucle de réduction L2 → L3 (fonction pure, point fixe) |
-| `internal/engine` | Hermetic Execution Engine 3 phases (Snapshot, Execution, Commit) |
-| `internal/replay` | **Hermetic Replay Engine** – exécute le code dans un workspace isolé |
-| `internal/ci` | **CI Gate** – validateur d'invariants en lecture seule sur la projection L3 |
+| `internal/dag` | **Moteur DAG déterministe** – exécution topologique, scheduler single-thread, workers stateless |
+| `internal/ci` | Pipeline CI (Plan, Scheduler, Cache, Artifacts, Replay) |
+| `internal/replay` | Hermetic Replay Engine avec isolation CI-grade |
+| `internal/ci/causal` | Couche causale – instrumentation, localisation de divergence, patch engine |
+| `internal/adaptive` | Boucle adaptative – diagnostic causal et correction ciblée |
 | `internal/chaos` | Suite de tests de chaos (crash, corruption, désordre) |
-| `internal/agent` | Agent Runtime avec contrat Task/Plan/Action/Executor |
-| `internal/scheduler` | Boucle daemon continue (Engine → Agent → Executor) |
 
 ---
 
-## 🔁 Hermetic Replay Engine
+## 🔁 DAG Executor (nouveau cœur)
 
-Le Replay Engine est le seul composant qui utilise l'exécution isolée.
-Il garantit qu'un run peut être rejoué de manière déterministe :
-
-1. **Capture de snapshot** : contenu des fichiers, hash, nœuds associés
-2. **Workspace temporaire isolé** : création d'un module Go jetable
-3. **Environnement contrôlé** : `GOCACHE`, `GOMODCACHE`, `GOPATH` isolés
-4. **Exécution reproductible** : `go test -count=1 ./...`
-5. **Événement L2** : un événement `REPLAY_RESULT` est émis pour audit
-
----
-
-## 🧪 CI Gate
-
-Le CI Gate est un validateur passif, strictement read-only.
-Il ne déclenche aucune exécution. Il vérifie les invariants sur L3 :
-
-- Aucun nœud `BROKEN` ne doit persister
-- Chaque nœud de L1 doit avoir un état dans L3
+Le moteur DAG remplace l'ancien scheduler par vagues :
+1. **Construction du graphe** : BuildDAG crée un graphe acyclique dirigé (DAG)
+   où chaque nœud représente une action (job start, step run, cache, artifact).
+2. **Exécution topologique** : l'Executor maintient une file d'attente (ready queue)
+   et exécute les nœuds dont toutes les dépendances sont satisfaites.
+3. **Workers stateless** : les goroutines exécutent les commandes sans jamais
+   modifier l'état du scheduler. L'ordre est garanti par le single-thread scheduler.
+4. **Événements déterministes** : chaque nœud produit ses événements, collectés
+   dans l'ordre topologique et écrits dans le WAL.
 
 ---
 
@@ -90,7 +76,7 @@ Il ne déclenche aucune exécution. Il vérifie les invariants sur L3 :
 - **Immuabilité** : L2 est append-only
 - **Herméticité** : le Replay Engine n'a aucune dépendance au système de fichiers hôte
 - **Reproductibilité** : exécution stable dans un environnement Go contrôlé (CI-oriented)
-- **Robustesse** : validée par la suite de tests de chaos
+- **DAG-driven** : l'ordre d'exécution est dicté par les dépendances causales, pas par le runtime
 
 ---
 
@@ -102,12 +88,10 @@ internal/
  storage/       → SQLite, schéma, wrappers
  compiler/      → AST → L1 (ingestion déterministe)
  reducer/       → L2 → L3 (fonction pure)
- engine/        → Exécution 3 phases (Snapshot, Execution, Commit)
+ dag/           → Moteur DAG (nœuds, résolveur topologique, exécuteur)
+ ci/            → Pipeline CI (Plan, Scheduler, Cache, Artifacts, Replay, causal)
  replay/        → Hermetic Replay Engine
- ci/            → CI Gate (validation invariants)
- agent/         → Agent Runtime (Task, Plan, Action, Executor)
- executor/      → Exécuteur des plans d'action
- scheduler/     → Boucle daemon (Engine → Agent → Executor)
+ adaptive/      → Boucle adaptative avec diagnostic causal
  chaos/         → Tests de chaos et résilience
  symbol/        → Table de symboles (lookup)
  resolver/      → Résolution des appels (non-régression)
@@ -116,18 +100,7 @@ internal/
 
 ---
 
-## 🚀 Exécution
-
-```bash
-# Mode one-shot
-./pads -db test_project/pads.db -ingest test_project
-
-# Mode daemon
-./pads -db test_project/pads.db -ingest test_project -daemon -interval 30s
-```
-
----
-
+## 🧪 Tests
 
 ```bash
 go test ./... -v -timeout 120s
@@ -139,13 +112,12 @@ la résilience du système face aux crashs, corruptions et désordres.
 ---
 
 
-       ✔ Moteur de réduction de noyau stable
+       ✔ Moteur DAG déterministe
        ✔ Tests de chaos validés
-       ✔ Hermetic Execution Engine 3 phases
-       ✔ Hermetic Replay Engine avec isolation CI-oriented
+       ✔ Replay Engine avec isolation CI-oriented
        ✔ CI Gate en lecture seule
-       ✔ Agent Runtime avec Executor
-       ✔ Boucle de réalité fermée (ingestion → exécution → feedback → convergence)
+       ✔ Boucle adaptative avec diagnostic causal
+       🔧 Couche causale hybride en développement
 
 ---
 
