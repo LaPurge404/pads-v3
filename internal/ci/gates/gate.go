@@ -4,19 +4,13 @@ import (
     "context"
 
     "pads-v3/internal/event"
+    "pads-v3/internal/policy"
 )
-
-// GateResult represents a structured gate evaluation outcome.
-type GateResult struct {
-    Name   string
-    Passed bool
-    Reason string
-}
 
 // Gate defines a CI validation gate.
 type Gate interface {
     Name() string
-    Check(ctx context.Context, input GateInput) GateResult
+    Check(ctx context.Context, input GateInput) policy.GateResult
 }
 
 // GateInput is the shared context for all gates.

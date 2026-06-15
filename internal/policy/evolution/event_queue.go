@@ -1,0 +1,66 @@
+package evolution
+
+import (
+"bufio"
+"encoding/json"
+"fmt"
+"os"
+"sync"
+)
+
+// QueueEvent est l'unité soumise à la file d'attente.
+type QueueEvent struct {
+ID        string  `json:"id"`
+Type      string  `json:"type"`
+Candidate int     `json:"candidate"`
+Current   int     `json:"current"`
+Weight    float64 `json:"weight"`
+Mode      Mode    `json:"mode"`
+}
+
+// EventQueue est une file persistée (append‑only) thread‑safe.
+type EventQueue struct {
+mu   sync.Mutex
+file *os.File
+path string
+}
+
+func NewEventQueue(path string) (*EventQueue, error) {
+f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+if err != nil {
+return nil, fmt.Errorf("ouverture queue %s: %w", path, err)
+}
+return &EventQueue{file: f, path: path}, nil
+}
+
+// Enqueue écrit immédiatement l'événement sur disque et retourne une erreur si l'écriture échoue.
+func (q *EventQueue) Enqueue(e QueueEvent) error {
+q.mu.Lock()
+defer q.mu.Unlock()
+
+data, err := json.Marshal(e)
+if err != nil {
+return err
+}
+_, err = q.file.Write(append(data, '\n'))
+return err
+}
+
+// LoadAll lit tous les événements de la file (crash recovery).
+func (q *EventQueue) LoadAll() ([]QueueEvent, error) {
+f, err := os.Open(q.path)
+if err != nil {
+return nil, err
+}
+defer f.Close()
+
+var events []QueueEvent
+scanner := bufio.NewScanner(f)
+for scanner.Scan() {
+var e QueueEvent
+if err := json.Unmarshal(scanner.Bytes(), &e); err == nil {
+events = append(events, e)
+}
+}
+return events, scanner.Err()
+}
