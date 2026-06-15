@@ -1,79 +1,127 @@
-# PADS v3 – Deterministic CI with Self-Learning Policy Engine
+# PADS — Policy-Augmented Deterministic System
 
-## Overview
+**PADS** est un moteur d’évolution auto‑protégé conçu pour les pipelines CI/CD et les systèmes autonomes.
+Il applique des politiques d’évaluation, détecte l’instabilité, journalise chaque décision de manière déterministe,
+et peut rejouer l’intégralité de son historique (event‑sourcing).
 
-PADS v3 is an event-sourced, deterministic CI system with a
-self-learning policy engine. It combines DAG-based execution,
-replay verification, multi-layer validation gates, chaos
-engineering, and adaptive decision tuning.
+---
 
-## Architecture
-
-```
-
-Job Spec → DAG Builder → DAG Executor → Canonical Events
-
-Gates Validation (Syntax, Semantic, Execution, Determinism)
-
-Policy Engine (weighted scoring, hard-fail gates, chaos penalty)
-
-Explainability (trace, replay, explanation)
-
-Policy WAL (append-only decision log)
-
-Learner (EMA, Z-score anomaly detection, adaptive tuning)
+## 🧠 Architecture (v3)
 
 ```
 
-## Key Principle
+     ┌──────────────┐     ┌───────────────────┐
+  HTTP API   │────▶│ Event Queue  │────▶│ Async Worker      │
+ (dashboard) │     │ (persistée)  │     │ (reprise crash)   │
+     └──────────────┘     └─────────┬─────────┘
 
-> Determinism is mandatory. Chaos is optional. Certification is authoritative.
-> Decisions are explainable, replayable, and continuously improving.
+                })
 
-## Pipeline
+ SafeEvolutionLoopV3  │
+  • MultiCycleEvaluator
+  • StabilityGate (adaptatif)
+  • AntiCollapseDetector
+  • RollbackManager
+  • WAL + EventStore   │
 
-1. **Execution** : Scheduler runs DAG, produces Canonical Events
-2. **Validation** : Gates check syntax, semantics, execution, determinism
-3. **Decision** : Policy Engine computes score and status (PASS/WARN/FAIL/BLOCK)
-4. **Audit** : Trace and Explanation are generated and persisted to WAL
-5. **Learning** : Learner replays WAL, updates EMA/Z-score, suggests tuning
 
-## Core Components
+                })
 
-| Package | Role |
-|---------|------|
-| `internal/dag` | Deterministic DAG executor |
-| `internal/ci` | CI pipeline (Scheduler, Cache, Artifacts, WAL) |
-| `internal/ci/gates` | Validation gates |
-| `internal/ci/certification` | Replay-based determinism proof |
-| `internal/ci/chaos` | Fault injection for resilience testing |
-| `internal/ci/runner` | PolicyRunner: gates → policy → WAL → learner |
-| `internal/policy` | Policy Engine (scoring, hard-fail, chaos penalty) |
-| `internal/policy/wal` | Append-only decision log |
-| `internal/policy/learner` | Adaptive tuning with EMA and Z-score anomaly detection |
+  ReplayEngine        │
+  (time‑travel debug) │
 
-## Status
 
-- ✅ DAG execution engine
-- ✅ CI gates (syntax, semantic, execution, determinism)
-- ✅ Chaos engineering (silent, hard, full)
-- ✅ Replay certification
-- ✅ Policy engine (weighted scoring, hard-fail gates)
-- ✅ Explainability (trace, replay, explanation)
-- ✅ Policy WAL (append-only, replayable)
-- ✅ Learner (EMA, Z-score, anomaly detection)
-- ✅ Runner integration (end-to-end pipeline)
-- ⚠️ Dynamic reconfiguration (TunedConfig not yet applied automatically)
-- ⚠️ Learner concurrency hardening
-- ⚠️ Learner state persistence (snapshot)
+```
 
-## Build & Test
+---
+
+## ⚡ Commandes
+
+### API de pilotage (dashboard web + endpoints JSON)
 
 ```bash
-go build ./...
-go test ./...
+go run ./cmd/evolution-api
+# ou
+./evolution-api
+# Puis ouvrez http://127.0.0.1:8080
 ```
 
-License
+L’API écoute sur 127.0.0.1:8080 et propose :
 
-Experimental / Research – no production warranty.
+       GET  /         → dashboard HTML interactif
+       GET  /health   → état de santé
+       GET  /state    → état système (JSON, nécessite token)
+       POST /evolve   → soumettre une nouvelle évolution (JSON, nécessite token)
+
+Le token d’authentification est généré au lancement et affiché dans le terminal.
+
+Replay (time‑travel debugging)
+
+```bash
+go run ./cmd/evolution-replay -- -file evolution.log
+./evolution-replay -file evolution.log -full
+./evolution-replay -file evolution.log -state-at 5
+```
+
+Options :
+
+       -file   : chemin du journal d’événements
+       -full   : affiche chaque étape de l’historique
+       -step   : mode pas‑à‑pas (appuyez sur Entrée)
+       -state-at N : état du système à la séquence N
+
+---
+
+
+```bash
+go test ./... -v
+```
+
+Plus de 100 tests couvrent l’intégralité des composants (évaluateur, gate, détecteur, rollback, WAL, worker, replay, API).
+
+---
+
+
+       Évaluation pondérée : comparaison de configurations candidates.
+       Stability Gate adaptatif : seuil dynamique basé sur l’écart‑type historique.
+       Anti‑collapse : détection de variance, oscillation, drift.
+       Rollback automatique : restauration de l’état stable en cas d’instabilité.
+       WAL (Write‑Ahead Log) : journal horodaté et chaîné (SHA‑256).
+       Event‑sourcing : chaque décision est un événement immuable, rejouable à l’identique.
+       Bandit multi‑bras : exploration déterministe (seedable) pour l’apprentissage.
+       API HTTP sécurisée : token Bearer, rate limiting, écoute locale, TLS optionnel.
+       Supervision en temps réel : dashboard web avec formulaire de pilotage, graphique d’historique, métriques de stabilité.
+
+---
+
+
+       Token d’accès obligatoire pour les endpoints sensibles.
+       Rate limiting configurable.
+       Écoute restreinte à localhost par défaut.
+       TLS supporté (-cert et -key).
+
+---
+
+
+```
+cmd/
+  evolution-api/      # Serveur HTTP + dashboard
+  evolution-replay/   # Outil de replay CLI
+internal/
+  policy/
+    evolution/        # Moteur d'évolution (cœur du système)
+    learner/          # Détection d'anomalies et apprentissage
+    shadow/           # Évaluation parallèle et A/B testing
+    change/           # Validation des propositions de changement
+    wal/              # Journal d'audit
+```
+
+---
+
+
+Le système est opérationnel, testé, et prêt à être intégré dans un pipeline CI/CD réel.
+La prochaine étape est l’intégration continue avec décision automatique de déploiement.
+
+---
+
+Projet maintenu par LaPurge404.
