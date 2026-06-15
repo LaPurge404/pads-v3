@@ -3,7 +3,7 @@ package storage
 const (
     STATE_STABLE   = "STABLE"
     STATE_BROKEN   = "BROKEN"
-    STATE_UNTESTED  = "UNTESTED"
+    STATE_UNTESTED = "UNTESTED"
 )
 
 type GraphState struct {
@@ -16,6 +16,16 @@ type GraphState struct {
 
 func (db *DB) ClearGraphState() error {
     _, err := db.SQL.Exec(`DELETE FROM graph_state`)
+    return err
+}
+
+func (db *DB) ClearGraphStateByFile(filePath string) error {
+    _, err := db.SQL.Exec(`
+        DELETE FROM graph_state
+        WHERE node_id IN (
+            SELECT id FROM nodes WHERE file_path = ?
+        )
+    `, filePath)
     return err
 }
 

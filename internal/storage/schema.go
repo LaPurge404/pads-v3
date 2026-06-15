@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     file_path TEXT NOT NULL,
-    signature_hash TEXT NOT NULL
+    signature_hash TEXT NOT NULL,
+    file_hash TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS edges (

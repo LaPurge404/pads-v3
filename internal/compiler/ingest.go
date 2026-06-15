@@ -7,6 +7,8 @@ import (
     "go/ast"
     "go/parser"
     "go/token"
+    "io"
+    "os"
     "sort"
     "strings"
 
@@ -37,15 +39,12 @@ type edgeInfo struct {
 }
 
 // symbolKey est une clé composite stable pour un symbole local.
-// Le receiver est toujours la valeur canonique produite par extractReceiverType.
 type symbolKey struct {
     receiver string
     name     string
 }
 
 // IngestFile parse un fichier Go et insère son graphe L1 dans la base.
-// La résolution des appels est strictement locale (file-scope).
-// Les appels non résolus sont conservés avec la cible "unresolved:<identifiant>".
 func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
     fset := token.NewFileSet()
     file, err := parser.ParseFile(fset, filePath, nil, 0)
@@ -53,10 +52,16 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
         return nil, fmt.Errorf("parse %s: %w", filePath, err)
     }
 
+    // Calculer le hash du fichier
+    fileHash, err := computeFileHash(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("file hash %s: %w", filePath, err)
+    }
+
     pkgName := file.Name.Name
     fileNodeID := fmt.Sprintf("%s/%s", pkgName, filePath)
 
-    // Index des symboles locaux utilisant une clé composite stable.
+    // Extraction des symboles locaux.
     canonicalID := make(map[symbolKey]string)
 
     // Première passe : collecter les symboles.
@@ -65,11 +70,9 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
         case *ast.FuncDecl:
             name := decl.Name.Name
             if decl.Recv == nil || len(decl.Recv.List) == 0 {
-                // fonction simple
                 id := fmt.Sprintf("%s.%s", pkgName, name)
                 canonicalID[symbolKey{name: name}] = id
             } else {
-                // méthode
                 recvType := extractReceiverType(decl.Recv.List[0].Type)
                 id := fmt.Sprintf("%s.%s.%s", pkgName, recvType, name)
                 canonicalID[symbolKey{receiver: recvType, name: name}] = id
@@ -123,11 +126,12 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
             if decl.Body != nil {
                 ast.Inspect(decl.Body, func(call ast.Node) bool {
                     callExpr, ok := call.(*ast.CallExpr)
-                    if !ok { return true }
+                    if !ok {
+                        return true
+                    }
                     switch fun := callExpr.Fun.(type) {
                     case *ast.Ident:
                         callee := fun.Name
-                        // Recherche d'abord avec la clé fonction simple (receiver vide)
                         if resolvedID, exists := canonicalID[symbolKey{name: callee}]; exists {
                             edges = append(edges, edgeInfo{
                                 Source:   id,
@@ -135,7 +139,6 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
                                 Relation: "CALLS",
                             })
                         } else {
-                            // Conserver une trace explicite de l'appel non résolu
                             edges = append(edges, edgeInfo{
                                 Source:   id,
                                 Target:   fmt.Sprintf("unresolved:%s", callee),
@@ -153,15 +156,21 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
     // IMPORTS
     for _, imp := range file.Imports {
         path := strings.Trim(imp.Path.Value, `"`)
-        if imp.Name != nil && imp.Name.Name == "_" { continue }
+        if imp.Name != nil && imp.Name.Name == "_" {
+            continue
+        }
         edges = append(edges, edgeInfo{Source: fileNodeID, Target: path, Relation: "IMPORTS"})
     }
 
     // Normalisation et dédoublonnage
     sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
     sort.Slice(edges, func(i, j int) bool {
-        if edges[i].Source != edges[j].Source { return edges[i].Source < edges[j].Source }
-        if edges[i].Target != edges[j].Target { return edges[i].Target < edges[j].Target }
+        if edges[i].Source != edges[j].Source {
+            return edges[i].Source < edges[j].Source
+        }
+        if edges[i].Target != edges[j].Target {
+            return edges[i].Target < edges[j].Target
+        }
         return edges[i].Relation < edges[j].Relation
     })
 
@@ -180,7 +189,7 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
         if err != nil {
             return nil, fmt.Errorf("hash %s: %w", nd.ID, err)
         }
-        err = db.InsertNode(nd.ID, nd.Type, filePath, hash)
+        err = db.InsertNode(nd.ID, nd.Type, filePath, hash, fileHash)
         if err != nil {
             return nil, fmt.Errorf("insert node %s: %w", nd.ID, err)
         }
@@ -199,9 +208,20 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
     return &IngestResult{FilePath: filePath, NodesAdded: nodesAdded, EdgesAdded: edgesAdded}, nil
 }
 
-// extractReceiverType retourne le type du receveur exactement tel qu'il apparaît
-// dans l'AST. C'est la fonction canonique unique utilisée pour les IDs de nœuds
-// et les clés de symbole.
+func computeFileHash(filePath string) (string, error) {
+    f, err := os.Open(filePath)
+    if err != nil {
+        return "", err
+    }
+    defer f.Close()
+    h := sha256.New()
+    if _, err := io.Copy(h, f); err != nil {
+        return "", err
+    }
+    return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+// extractReceiverType retourne le type du receveur exactement tel qu'il apparaît dans l'AST.
 func extractReceiverType(expr ast.Expr) string {
     switch t := expr.(type) {
     case *ast.Ident:
@@ -221,7 +241,9 @@ func computeSignatureHash(nd nodeInfo) (string, error) {
     sortedArgs := make([]string, len(nd.ArgsTypes))
     copy(sortedArgs, nd.ArgsTypes)
     sort.Strings(sortedArgs)
-    if sortedArgs == nil { sortedArgs = []string{} }
+    if sortedArgs == nil {
+        sortedArgs = []string{}
+    }
 
     canon := struct {
         NodeType     string   `json:"nodetype"`
@@ -236,7 +258,9 @@ func computeSignatureHash(nd nodeInfo) (string, error) {
     }
 
     jsonBytes, err := json.Marshal(canon)
-    if err != nil { return "", err }
+    if err != nil {
+        return "", err
+    }
     h := sha256.Sum256(jsonBytes)
     return fmt.Sprintf("%x", h), nil
 }
@@ -244,13 +268,19 @@ func computeSignatureHash(nd nodeInfo) (string, error) {
 // typeToString retourne une représentation simplifiée d'un type.
 func typeToString(expr ast.Expr) string {
     switch t := expr.(type) {
-    case *ast.Ident: return t.Name
-    case *ast.StarExpr: return "*" + typeToString(t.X)
-    case *ast.SelectorExpr: return typeToString(t.X) + "." + t.Sel.Name
+    case *ast.Ident:
+        return t.Name
+    case *ast.StarExpr:
+        return "*" + typeToString(t.X)
+    case *ast.SelectorExpr:
+        return typeToString(t.X) + "." + t.Sel.Name
     case *ast.ArrayType:
-        if t.Len == nil { return "[]" + typeToString(t.Elt) }
+        if t.Len == nil {
+            return "[]" + typeToString(t.Elt)
+        }
         return "array"
-    default: return "unknown"
+    default:
+        return "unknown"
     }
 }
 

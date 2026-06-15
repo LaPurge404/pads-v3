@@ -8,9 +8,9 @@ func (m MockAgent) Solve(task Task, ctx Context) (Plan, error) {
     return Plan{
         Steps: []Action{
             {
-                Kind:   "log",
+                Kind:   ActionLog,
                 Target: task.Target,
-                Command: []string{"echo", "MockAgent: processing task " + task.Kind},
+                Command: []string{"echo", "MockAgent: processing task " + string(task.Kind)},
             },
         },
     }, nil

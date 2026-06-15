@@ -27,7 +27,7 @@ func BuildTasks(db *storage.DB) ([]Task, error) {
             return nil, fmt.Errorf("build tasks: scan: %w", err)
         }
         tasks = append(tasks, Task{
-            Kind:   "fix_broken",
+            Kind:   TaskFixBroken,
             Target: filePath,
             Goal:   fmt.Sprintf("Repair node %s in %s", nodeID, filePath),
         })
@@ -46,8 +46,10 @@ func RunOnce(db *storage.DB, a Agent) error {
     }
 
     for _, task := range tasks {
-        ctx := Context{
-            FilePath: task.Target,
+        ctx, err := BuildContext(db, task)
+        if err != nil {
+            log.Printf("agent: build context error: %v", err)
+            continue
         }
 
         plan, err := a.Solve(task, ctx)
