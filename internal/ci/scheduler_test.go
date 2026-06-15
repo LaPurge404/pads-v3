@@ -1,20 +1,19 @@
 package ci
 
 import (
-    "encoding/json"
-    "os"
-    "strings"
     "testing"
+
+    "pads-v3/internal/event"
+    "pads-v3/internal/trace"
 )
 
 func TestScheduler_ReplayDeterminism(t *testing.T) {
     tmpDir := t.TempDir()
+    walPath := tmpDir + "/ci.wal"
 
     // Run 1
     cacheDir1 := tmpDir + "/cache1"
-    walPath1 := tmpDir + "/ci1.wal"
-
-    wal1, err := NewWAL(walPath1)
+    wal1, err := NewWAL(walPath)
     if err != nil {
         t.Fatal(err)
     }
@@ -37,12 +36,14 @@ func TestScheduler_ReplayDeterminism(t *testing.T) {
     }
     wal1.Close()
 
-    events1 := readWAL(t, walPath1)
+    events1, err := trace.ReadWALFile(walPath)
+    if err != nil {
+        t.Fatal(err)
+    }
 
     // Run 2 (fresh everything)
     cacheDir2 := tmpDir + "/cache2"
     walPath2 := tmpDir + "/ci2.wal"
-
     wal2, err := NewWAL(walPath2)
     if err != nil {
         t.Fatal(err)
@@ -58,10 +59,12 @@ func TestScheduler_ReplayDeterminism(t *testing.T) {
     }
     wal2.Close()
 
-    events2 := readWAL(t, walPath2)
+    events2, err := trace.ReadWALFile(walPath2)
+    if err != nil {
+        t.Fatal(err)
+    }
 
     if len(events1) != len(events2) {
-        t.Logf("WAL files: %s vs %s", walPath1, walPath2)
         t.Logf("Run 1 events: %d, Run 2 events: %d", len(events1), len(events2))
         printDiff(t, events1, events2)
         t.Fatalf("WAL lengths differ")
@@ -77,28 +80,7 @@ func TestScheduler_ReplayDeterminism(t *testing.T) {
     t.Logf("Determinism OK: %d identical events", len(events1))
 }
 
-func readWAL(t *testing.T, path string) []EventRecord {
-    t.Helper()
-    data, err := os.ReadFile(path)
-    if err != nil {
-        t.Fatal(err)
-    }
-    lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-    var events []EventRecord
-    for _, line := range lines {
-        if line == "" {
-            continue
-        }
-        var e EventRecord
-        if err := json.Unmarshal([]byte(line), &e); err != nil {
-            t.Fatalf("json unmarshal: %v (line: %s)", err, line)
-        }
-        events = append(events, e)
-    }
-    return events
-}
-
-func printDiff(t *testing.T, e1, e2 []EventRecord) {
+func printDiff(t *testing.T, e1, e2 []event.CanonicalEvent) {
     t.Helper()
     min := len(e1)
     if len(e2) < min {

@@ -66,3 +66,16 @@ func cloneMap(m map[string]string) map[string]string {
     }
     return cp
 }
+
+// CacheSnapshot is a frozen view of the cache at plan time.
+type CacheSnapshot map[string]bool
+
+// TakeSnapshot creates a frozen snapshot of the cache's current state.
+func (c *Cache) TakeSnapshot(keys []string) CacheSnapshot {
+    snap := make(CacheSnapshot)
+    for _, key := range keys {
+        _, ok := c.Hit(key)
+        snap[key] = ok
+    }
+    return snap
+}

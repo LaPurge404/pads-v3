@@ -4,23 +4,15 @@ import (
     "encoding/json"
     "os"
     "sync"
+
+    "pads-v3/internal/event"
 )
 
-// EventRecord represents a durable CI lifecycle event in the WAL.
-type EventRecord struct {
-    Seq     int64  `json:"seq"`
-    Type    string `json:"type"`
-    JobID   string `json:"job_id"`
-    StepID  string `json:"step_id"`
-    Status  string `json:"status"`
-    Payload string `json:"payload"`
-}
-
 // WAL is an append-only event log stored on disk.
+// It now stores exclusively CanonicalEvent objects.
 type WAL struct {
     mu   sync.Mutex
     file *os.File
-    seq  int64
 }
 
 // NewWAL opens or creates a WAL file at the given path.
@@ -29,45 +21,34 @@ func NewWAL(path string) (*WAL, error) {
     if err != nil {
         return nil, err
     }
-    // Récupérer le dernier seq en lisant le fichier
-    var lastSeq int64
-    dec := json.NewDecoder(f)
-    for {
-        var rec EventRecord
-        if err := dec.Decode(&rec); err != nil {
-            break
-        }
-        if rec.Seq > lastSeq {
-            lastSeq = rec.Seq
-        }
-    }
-    return &WAL{file: f, seq: lastSeq}, nil
+    return &WAL{file: f}, nil
 }
 
-// Append ajoute un événement au WAL de manière thread-safe et retourne le Seq attribué.
-func (w *WAL) Append(e EventRecord) (int64, error) {
+// AppendCanonical writes a CanonicalEvent to the WAL.
+func (w *WAL) AppendCanonical(e event.CanonicalEvent) error {
     w.mu.Lock()
     defer w.mu.Unlock()
 
-    w.seq++
-    e.Seq = w.seq
-
     b, err := json.Marshal(e)
     if err != nil {
-        return 0, err
+        return err
     }
     b = append(b, '\n')
     if _, err := w.file.Write(b); err != nil {
-        return 0, err
+        return err
     }
-    // Force flush pour durabilité
-    if err := w.file.Sync(); err != nil {
-        return 0, err
-    }
-    return w.seq, nil
+    return w.file.Sync()
 }
 
-// Close ferme le fichier WAL.
+// Close closes the WAL file.
 func (w *WAL) Close() error {
     return w.file.Close()
+}
+
+// Path returns the WAL file path.
+func (w *WAL) Path() string {
+    if w == nil || w.file == nil {
+        return ""
+    }
+    return w.file.Name()
 }
