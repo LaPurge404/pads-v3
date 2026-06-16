@@ -19,7 +19,7 @@ detector := evolution.NewAntiCollapseDetector(5, 10.0)
 bandit := evolution.NewBandit()
 loop := evolution.NewSafeEvolutionLoopV3(orch, es, wal, detector, evolution.ModeStable, bandit)
 
-worker := evolution.NewWorker(queue, loop)
+worker := evolution.NewWorker(queue, loop, evolution.DeltaRewarder{})
 go worker.Start()
 
 // Ajouter un événement
@@ -44,7 +44,7 @@ t.Fatalf("expected 1 event, got %d", len(events))
 }
 
 // Recréer un nouveau worker (reprise)
-worker2 := evolution.NewWorker(queue, loop)
+worker2 := evolution.NewWorker(queue, loop, evolution.DeltaRewarder{})
 go worker2.Start()
 time.Sleep(100 * time.Millisecond)
 

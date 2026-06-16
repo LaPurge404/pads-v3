@@ -1,0 +1,31 @@
+name: PADS CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  evolution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build PADS
+        run: go build ./...
+
+      - name: Start PADS API
+        run: |
+          go run ./cmd/evolution-api &
+          sleep 3
+          echo "PADS API started"
+
+      - name: Run PADS CI client
+        env:
+          PADS_TOKEN: ${{ secrets.PADS_TOKEN }}
+        run: |
+          go run ./cmd/pads-ci -token "$PADS_TOKEN"

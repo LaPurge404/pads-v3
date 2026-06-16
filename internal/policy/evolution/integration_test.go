@@ -23,7 +23,7 @@ detector := evolution.NewAntiCollapseDetector(5, 10.0)
 bandit := evolution.NewBandit()
 loop := evolution.NewSafeEvolutionLoopV3(orch, es, wal, detector, evolution.ModeStable, bandit)
 
-worker := evolution.NewWorker(queue, loop)
+worker := evolution.NewWorker(queue, loop, evolution.DeltaRewarder{})
 go worker.Start()
 
 // Simuler le serveur avec les handlers de l'API
