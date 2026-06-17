@@ -212,5 +212,65 @@ Enriches the agent context with:
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
 | `OPENAI_BASE_URL` | Custom OpenAI-compatible endpoint |
 
+---
+
+## 9. Sandbox Executor (Phase 2)
+
+### Overview
+
+The Sandbox provides an isolated environment to test code changes before applying them to the production codebase. It follows a **copy-test-apply** pattern:
+
+```
+Plan → Sandbox Copy → Apply Changes → Run Tests
+                                     ├── Pass  → Apply to Real FS
+                                     └── Fail  → Rollback (no changes)
+```
+
+### Components
+
+**Sandbox** (`internal/agent/sandbox.go`):
+```go
+type Sandbox struct {
+    workDir     string  // temp directory with project copy
+    projectRoot string  // original project path
+    cleanup     func()  // cleanup function
+}
+```
+
+Key methods:
+- `NewSandbox(projectRoot)` - Creates isolated copy
+- `ApplyChange(targetPath, content)` - Applies change to sandbox copy
+- `RunTests()` - Executes test suite in sandbox
+- `Close()` - Cleans up temp directory
+
+**SandboxExecutor** (`internal/agent/sandbox.go`):
+```go
+type SandboxExecutor struct {
+    executor    *Executor
+    projectRoot string
+    autoCleanup bool
+}
+```
+
+Key methods:
+- `ExecuteWithSandbox(plan)` - Runs plan in sandbox, applies if tests pass, rolls back if fail
+- `DryRunWithSandbox(plan)` - Tests without applying changes
+
+### Sandbox Workflow
+
+1. `NewSandbox(root)` creates a temp copy of the project (excluding `.git`)
+2. Plan actions modify the **sandbox copy** only
+3. `RunTests()` executes the full test suite in sandbox
+4. If tests **pass**: changes are applied to the **real** filesystem
+5. If tests **fail**: sandbox is discarded, original is **unchanged**
+6. Temp directory is cleaned up
+
+### Safety Properties
+
+- Original files are **never** modified during sandbox execution
+- Changes only persist to the real filesystem after tests pass
+- Build errors are caught before any modification
+- Automatic cleanup of temp directories
+
 ---  
 *End of corrected DESIGN.md*
