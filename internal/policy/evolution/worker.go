@@ -59,7 +59,7 @@ func (w *Worker) process(e QueueEvent) error {
         e.Weight,
     )
     if err != nil {
-        return fmt.Errorf("worker evolve failed: %w", err)
+        return fmt.Errorf("[worker] [ERR_EVOLVE_FAILED] worker evolve failed for event %s: %w", e.ID, err)
     }
 
     newStability := w.loop.StabilityScore()
