@@ -77,10 +77,14 @@ selector:  selector,
 mux := http.NewServeMux()
 mux.HandleFunc("/", s.dashboard)
 mux.HandleFunc("/health", s.health)
+mux.HandleFunc("/dashboard/enriched", s.dashboardEnriched)
 mux.HandleFunc("/evolve", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.enqueueEvolve))))
 mux.HandleFunc("/state", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.state))))
 mux.HandleFunc("/select", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.handleSelect))))
 mux.HandleFunc("/workspace", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.workspace))))
+mux.HandleFunc("/agent/evolve", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.handleAgentEvolve))))
+mux.HandleFunc("/agent/status", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.handleAgentStatus))))
+mux.HandleFunc("/agent/strategies", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.handleAgentStrategies))))
 
 addr := "127.0.0.1:8080"
 if *certFile != "" && *keyFile != "" {
@@ -104,9 +108,15 @@ next(w, r)
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
-html := dashboardHTML
-w.Header().Set("Content-Type", "text/html; charset=utf-8")
-w.Write([]byte(html))
+	html := dashboardHTML
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(html))
+}
+
+func (s *Server) dashboardEnriched(w http.ResponseWriter, r *http.Request) {
+	html := enrichedDashboardHTML
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(html))
 }
 
 func (s *Server) enqueueEvolve(w http.ResponseWriter, r *http.Request) {
