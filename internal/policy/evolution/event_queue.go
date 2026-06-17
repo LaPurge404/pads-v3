@@ -10,12 +10,13 @@ import (
 
 // QueueEvent est l'unité soumise à la file d'attente.
 type QueueEvent struct {
-ID        string  `json:"id"`
-Type      string  `json:"type"`
-Candidate int     `json:"candidate"`
-Current   int     `json:"current"`
-Weight    float64 `json:"weight"`
-Mode      Mode    `json:"mode"`
+	ID        string            `json:"id"`
+	Type      string            `json:"type"`
+	Candidate int               `json:"candidate"`
+	Current   int               `json:"current"`
+	Weight    float64           `json:"weight"`
+	Mode      Mode              `json:"mode"`
+	Metadata  map[string]string `json:"metadata,omitempty"` // données additionnelles (stratégie, confidence, etc.)
 }
 
 // EventQueue est une file persistée (append‑only) thread‑safe.

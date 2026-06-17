@@ -25,6 +25,12 @@ func NewCodeAgent(llm LLMClient) *CodeAgent {
 	}
 }
 
+// NewCodeAgentDefault creates a CodeAgent with the default Nvidia LLM client.
+// This is the recommended constructor when no specific provider is needed.
+func NewCodeAgentDefault() *CodeAgent {
+	return NewCodeAgent(NewDefaultLLMClient())
+}
+
 // Solve generates a plan to fix the given task using the LLM.
 func (a *CodeAgent) Solve(task Task, ctx Context) (Plan, error) {
 	if task.Kind != TaskFixBroken {

@@ -23,7 +23,7 @@ pads
 test_project/
 
 # PADS runtime generated binaries
-evolution-api
+/evolution-api
 evolution-replay
 
 # PADS runtime artifacts

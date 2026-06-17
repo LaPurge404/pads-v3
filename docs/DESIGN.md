@@ -272,5 +272,172 @@ Key methods:
 - Build errors are caught before any modification
 - Automatic cleanup of temp directories
 
----  
+---
+
+## 10. CodeAgent ↔ Evolution Engine Integration (Phase 3)
+
+### Overview
+
+The CodeAgent generates code modifications that are evaluated by the SafeEvolutionLoopV3 engine. The UCB bandit selector learns which agent prompting strategies produce the best outcomes.
+
+### Architecture
+
+```
+CodeAgent (LLM: Nvidia by default)
+    ↓ generates Plan
+SandboxExecutor
+    ↓ validates (tests pass/fail)
+AgentCandidate → SafeEvolutionLoopV3
+    ↓ UCB feedback
+UCBSelector (learns best strategies)
+```
+
+### Components
+
+**AgentCandidate** (`internal/policy/evolution/agent_loop.go`):
+```go
+type AgentCandidate struct {
+    ID         string
+    TargetFile string
+    Patch      string
+    Confidence float64  // LLM confidence (0-1)
+    Retries    int
+    Strategy   string   // UCB arm name
+    CreatedAt  time.Time
+}
+```
+
+**AgentResult** (`internal/policy/evolution/agent_loop.go`):
+```go
+type AgentResult struct {
+    CandidateID    string
+    Score          int           // Evolution score after evaluation
+    Accepted       bool          // Whether evolution accepted the candidate
+    CycleResult    CycleResult
+    StabilityScore float64
+    Reason         string        // Human-readable explanation
+    UCBArm         string        // Strategy used
+    Reward         float64       // UCB reward computed
+}
+```
+
+**AgentLoop** (`internal/policy/evolution/agent_loop.go`):
+```go
+type AgentLoop struct {
+    loop     *SafeEvolutionLoopV3
+    selector *UCBSelector
+    rewarder Rewarder
+}
+```
+
+Key methods:
+- `Evaluate(candidate, currentScore, weight)` - Evaluates candidate, updates UCB
+- `SelectArm()` - Returns current UCB-selected strategy
+- `AddArm(name)` - Registers a new strategy arm
+- `UCBStats()` - Returns statistics for all arms
+
+**EvolutionConnector** (`internal/agent/evolution_bridge.go`):
+```go
+type EvolutionConnector struct {
+    codeAgent    *CodeAgent
+    sandboxExec  *SandboxExecutor
+    agentLoop    *evolution.AgentLoop
+    currentScore int
+}
+```
+
+Key methods:
+- `SuggestAndEvaluate(task, ctx)` - Full pipeline: generate → sandbox → evolve → learn
+
+**CodeAgentForEvolution** (`internal/agent/evolution_bridge.go`):
+```go
+type CodeAgentForEvolution struct {
+    CodeAgent    *CodeAgent
+    SandboxExec  *SandboxExecutor
+    AgentLoop    *evolution.AgentLoop
+    CurrentScore int
+    ProjectRoot  string
+}
+```
+
+Key methods:
+- `RunTask(task, ctx)` - Runs a task through the full evolution pipeline
+- `FixBrokenNode(ctx)` - Convenience method for fixing broken nodes
+
+### LLM Providers
+
+**NvidiaClient** (`internal/agent/llm.go`) is the **default** LLM provider:
+- Uses `NVIDIA_API_KEY` environment variable
+- Default model: `meta/llama-3.1-70b-instruct`
+- Customizable via `NVIDIA_BASE_URL` and `NVIDIA_MODEL` env vars
+
+Other providers available but not default:
+- `OpenAIClient` - uses `OPENAI_API_KEY`
+- `ClaudeClient` - uses `ANTHROPIC_API_KEY`
+
+Factory functions:
+- `NewDefaultLLMClient()` - Returns Nvidia client (recommended)
+- `NewCodeAgentDefault()` - Creates CodeAgent with Nvidia
+- `NewCodeAgentForEvolutionDefault(projectRoot, agentLoop)` - Full pipeline with Nvidia
+
+### API Endpoints
+
+**POST /agent/evolve** - Submit an agent candidate for evolution evaluation:
+```json
+{
+  "target_file": "internal/foo/bar.go",
+  "patch": "func Hello() { return \"world\" }",
+  "confidence": 0.85,
+  "mode": "stable"
+}
+```
+
+Response:
+```json
+{
+  "candidate_id": "abc123",
+  "accepted": true,
+  "score": 72,
+  "confidence": 0.85,
+  "stability_score": 0.72,
+  "reason": "Accepted: improvement +22",
+  "ucb_arm": "conservative",
+  "reward": 0.22,
+  "sandbox_passed": true
+}
+```
+
+**GET /agent/status** - Returns UCB statistics and selected arm.
+
+**GET/POST /agent/strategies** - List or register agent strategies for UCB selection.
+
+### Workflow
+
+1. **CodeAgent.Solve(task, ctx)** generates a `Plan` via LLM (Nvidia by default)
+2. **SandboxExecutor.ExecuteWithSandbox(plan)** validates in isolated copy
+3. **AgentCandidate** is built from sandbox results and LLM confidence
+4. **AgentLoop.Evaluate(candidate)** runs through SafeEvolutionLoopV3
+5. UCB selector is updated with the reward (delta stability if accepted, 0 if rejected)
+6. Next iteration uses the UCB-selected strategy for better success rate
+
+### UCB Arms
+
+Default strategy arms:
+- `conservative` - Low temperature, prefer minimal changes
+- `balanced` - Medium temperature, balanced changes
+- `aggressive` - Higher temperature, more transformative changes
+
+New arms can be registered via `/agent/strategies` (POST).
+
+### Evaluation Criteria
+
+A candidate is accepted if:
+- StabilityGate passes (stability delta > threshold)
+- AntiCollapseDetector doesn't detect collapse (too many similar events)
+- Sandbox tests pass (if configured)
+
+Reward = `newStability - oldStability` if accepted, else `0`.
+
+---
+
 *End of corrected DESIGN.md*

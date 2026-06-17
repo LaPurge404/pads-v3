@@ -34,14 +34,23 @@ func (b *Bandit) Update(name string, reward float64) {
 }
 
 func (b *Bandit) Select() string {
-    if len(b.arms) == 0 {
-        return ""
-    }
-    // Choix purement aléatoire pour l'exploration (seedé donc déterministe)
-    keys := make([]string, 0, len(b.arms))
-    for k := range b.arms {
-        keys = append(keys, k)
-    }
-    idx := b.rng.Intn(len(keys))
-    return keys[idx]
+	if len(b.arms) == 0 {
+		return ""
+	}
+	// Choix purement aléatoire pour l'exploration (seedé donc déterministe)
+	keys := make([]string, 0, len(b.arms))
+	for k := range b.arms {
+		keys = append(keys, k)
+	}
+	idx := b.rng.Intn(len(keys))
+	return keys[idx]
+}
+
+// ListArms returns all registered arm names.
+func (b *Bandit) ListArms() []string {
+	keys := make([]string, 0, len(b.arms))
+	for k := range b.arms {
+		keys = append(keys, k)
+	}
+	return keys
 }
