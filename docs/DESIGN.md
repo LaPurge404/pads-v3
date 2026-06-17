@@ -148,5 +148,69 @@ The token can be supplied via the `PADS_TOKEN` environment variable, a `token.tx
 
 All sections above now reflect the **actual code** located in `~/workspace/pads-v3`. No speculative or outdated information remains.
 
+---
+
+## 8. CodeAgent Architecture (New in agent/hermes-dev)
+
+### Overview
+
+The CodeAgent is an autonomous code improvement agent that uses an LLM to generate code modifications. It is integrated with the evolution engine and follows the supervised闭环 loop pattern.
+
+```
+CodeAgent → LLM → Plan → Executor → EvolutionEngine → UCB Learning
+```
+
+### Components
+
+**LLMClient Interface** (`internal/agent/llm.go`):
+```go
+type LLMClient interface {
+    GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error)
+}
+```
+
+Implemented by:
+- `OpenAIClient` - OpenAI API integration (set `OPENAI_API_KEY`)
+- `ClaudeClient` - Anthropic Claude API (set `ANTHROPIC_API_KEY`)
+
+**CodeAgent** (`internal/agent/code_agent.go`):
+```go
+type CodeAgent struct {
+    llm           LLMClient
+    executor      *Executor
+    maxRetries    int
+    minConfidence float64
+}
+```
+
+Features:
+- Builds context from storage (L2 events, L3 state)
+- Generates code via LLM with confidence scoring
+- Produces executable Plans with write_file and run_command actions
+- Respects minimum confidence threshold (default 0.6)
+
+**ContextBuilder** (`internal/agent/context_builder.go`):
+Enriches the agent context with:
+- Package path from nodes table
+- Node ID from graph_state
+- Recent L2 events for the target file
+- Aggregated L3 state summary (total/broken/stable counts)
+
+### Agent Workflow
+
+1. `BuildTasks(db)` - Find BROKEN nodes, create Tasks
+2. `BuildContext(db, task)` - Enrich context with storage data
+3. `CodeAgent.Solve(task, ctx)` - Query LLM for code fix
+4. `Executor.ExecutePlan(plan)` - Apply changes
+5. Evolution engine evaluates the change via UCB
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `OPENAI_API_KEY` | OpenAI API key for GPT models |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
+| `OPENAI_BASE_URL` | Custom OpenAI-compatible endpoint |
+
 ---  
 *End of corrected DESIGN.md*
