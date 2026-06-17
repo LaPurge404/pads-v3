@@ -191,22 +191,6 @@ arm := s.selector.Select()
 json.NewEncoder(w).Encode(map[string]string{"arm": arm})
 }
 
-func (s *Server) workspace(w http.ResponseWriter, r *http.Request) {
-gitBranch := getGitBranch()
-gitStatus := getGitStatus()
-testResults := getTestResults()
-
-resp := map[string]interface{}{
-"gitBranch":  gitBranch,
-"gitStatus":  gitStatus,
-"testPassed": testResults.passed,
-"testFailed": testResults.failed,
-"testTotal":  testResults.total,
-}
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(resp)
-}
-
 func generateID() string {
 b := make([]byte, 8)
 rand.Read(b)

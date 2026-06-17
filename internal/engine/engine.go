@@ -36,24 +36,24 @@ func RunOnce(db *storage.DB) error {
     // Phase 1: Snapshot (pure read)
     snapshot, err := buildSnapshot(db)
     if err != nil {
-        return fmt.Errorf("[engine] [ERR_SNAPSHOT_FAILED] snapshot: %w", err)
+        return fmt.Errorf("engine: snapshot: %w", err)
     }
 
     // Phase 2: Execution (pure, no DB access)
     results, err := executeSnapshot(snapshot)
     if err != nil {
-        return fmt.Errorf("[engine] [ERR_EXECUTE_FAILED] execute: %w", err)
+        return fmt.Errorf("engine: execute: %w", err)
     }
 
     // Phase 3: Commit (all side effects here)
     if err := commitResults(db, results); err != nil {
-        return fmt.Errorf("[engine] [ERR_COMMIT_FAILED] commit: %w", err)
+        return fmt.Errorf("engine: commit: %w", err)
     }
 
     // Update L3 from the new events
     _, err = reducer.RunReductionLoop(db)
     if err != nil {
-        return fmt.Errorf("[engine] [ERR_REDUCER_FAILED] reducer: %w", err)
+        return fmt.Errorf("engine: reducer: %w", err)
     }
 
     return nil
@@ -61,27 +61,27 @@ func RunOnce(db *storage.DB) error {
 
 // buildSnapshot builds a sorted, immutable view of all files.
 func buildSnapshot(db *storage.DB) ([]FileSnapshot, error) {
-	rows, err := db.Query(`SELECT id, file_path, file_hash FROM nodes`)
-	if err != nil {
-		return nil, fmt.Errorf("[engine] [ERR_SNAPSHOT_QUERY_FAILED] failed to query nodes: %w", err)
-	}
-	defer rows.Close()
+    rows, err := db.Query(`SELECT id, file_path, file_hash FROM nodes`)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
 
-	grouped := map[string]*FileSnapshot{}
+    grouped := map[string]*FileSnapshot{}
 
-	for rows.Next() {
-		var id, path, hash string
-		if err := rows.Scan(&id, &path, &hash); err != nil {
-			return nil, fmt.Errorf("[engine] [ERR_SNAPSHOT_SCAN_FAILED] scan failed for file %s: %w", path, err)
-		}
-		if _, ok := grouped[path]; !ok {
-			grouped[path] = &FileSnapshot{
-				FilePath: path,
-				FileHash: hash,
-			}
-		}
-		grouped[path].Nodes = append(grouped[path].Nodes, id)
-	}
+    for rows.Next() {
+        var id, path, hash string
+        if err := rows.Scan(&id, &path, &hash); err != nil {
+            return nil, err
+        }
+        if _, ok := grouped[path]; !ok {
+            grouped[path] = &FileSnapshot{
+                FilePath: path,
+                FileHash: hash,
+            }
+        }
+        grouped[path].Nodes = append(grouped[path].Nodes, id)
+    }
 
     out := make([]FileSnapshot, 0, len(grouped))
     for _, v := range grouped {
@@ -132,31 +132,31 @@ func commitResults(db *storage.DB, results []ExecutionResult) error {
 
         // Invalidate old state for this file (kept as cleanup, not decision logic)
         if err := db.ClearGraphStateByFile(r.FilePath); err != nil {
-            return fmt.Errorf("[engine] [ERR_CLEAR_STATE_FAILED] clear state for file %s: %w", r.FilePath, err)
+            return err
         }
 
         payload := fmt.Sprintf(
             `{"file":"%s","status":"%s","stderr":"%s"}`,
             r.FilePath, r.Status, strings.TrimSpace(r.Stderr),
         )
-        
+
         _, err := db.InsertEvent(eventID, "TEST_RESULT", payload, r.ExitCode)
         if err != nil {
-            return fmt.Errorf("[engine] [ERR_INSERT_EVENT_FAILED] insert event %s: %w", eventID, err)
+            return err
         }
-        
+
         for _, nid := range r.NodeIDs {
             if err := db.InsertEventNode(eventID, nid); err != nil {
-                return fmt.Errorf("[engine] [ERR_INSERT_EVENT_NODE_FAILED] insert event node for event %s, node %s: %w", eventID, nid, err)
+                return err
             }
         }
-        
+
         if r.Hash != "" {
             if err := db.UpdateFileHash(r.FilePath, r.Hash); err != nil {
-                return fmt.Errorf("[engine] [ERR_UPDATE_FILE_HASH_FAILED] update file hash for %s: %w", r.FilePath, err)
+                return err
             }
         }
-        }
+    }
     return nil
 }
 
@@ -171,12 +171,12 @@ func makeEventID(filePath, fileHash, status string, exitCode int) string {
 func computeFileHash(filePath string) (string, error) {
     f, err := os.Open(filePath)
     if err != nil {
-        return "", fmt.Errorf("[engine] [ERR_COMPUTE_FILE_HASH_FAILED] compute hash for %s: %w", filePath, err)
+        return "", err
     }
     defer f.Close()
     h := sha256.New()
     if _, err := io.Copy(h, f); err != nil {
-        return "", fmt.Errorf("[engine] [ERR_COMPUTE_FILE_HASH_FAILED] compute hash for %s: %w", filePath, err)
+        return "", err
     }
     return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
@@ -199,7 +199,7 @@ func runGoTest(filePath string) (string, int, string, error) {
             }
             return status, exitErr.ExitCode(), string(output), nil
         }
-        return "FAIL", 1, string(output), fmt.Errorf("[engine] [ERR_RUN_GOTEST_FAILED] run go test for %s: %w", filePath, err)
+        return "FAIL", 1, string(output), err
     }
     return "PASS", 0, "", nil
 }
@@ -213,7 +213,7 @@ func findModuleRoot(startDir string) (string, error) {
         }
         parent := filepath.Dir(dir)
         if parent == dir {
-            return "", fmt.Errorf("[engine] [ERR_FIND_MODULE_ROOT_FAILED] go.mod not found in any parent of %s", startDir)
+            return "", fmt.Errorf("go.mod not found in any parent of %s", startDir)
         }
         dir = parent
     }

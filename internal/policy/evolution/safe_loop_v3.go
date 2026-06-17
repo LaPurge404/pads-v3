@@ -31,11 +31,12 @@ func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, wei
     l.detector.Add(float64(result.Score))
 
     if _, rolledBack := l.rollback.RollbackIfUnstable(); rolledBack {
-        return result, false, fmt.Errorf("[evolution] [ERR_ROLLBACK_TRIGGERED] rollback déclenché for candidate score %d", candidate.Score)
+        return result, false, fmt.Errorf("rollback déclenché")
     }
 
     l.sequence++
 
+    // Calcul du score de stabilité (moyenne de la fenêtre du détecteur)
     var stabilityScore float64
     if len(l.detector.window) > 0 {
         sum := 0.0
@@ -43,23 +44,6 @@ func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, wei
             sum += v
         }
         stabilityScore = sum / float64(len(l.detector.window))
-    }
-
-    // Tendance sur la fenêtre du détecteur
-    trend := 0.0
-    if len(l.detector.window) >= 2 {
-        trend = linearSlope(l.detector.window)
-    }
-
-    // Construction de la raison
-    trendText := TrendDescription(trend)
-    var reason string
-    if accepted {
-        reason = fmt.Sprintf("✅ Accepté — Qualité : %.0f%% (précédent : %d). Tendance : %s.",
-            stabilityScore, current.Score, trendText)
-    } else {
-        reason = fmt.Sprintf("❌ Rejeté — Qualité : %.0f%% (précédent : %d). Tendance : %s.",
-            stabilityScore, current.Score, trendText)
     }
 
     ev := Event{
@@ -70,11 +54,10 @@ func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, wei
         Mode:           l.mode,
         BanditSeed:     l.currentSeed,
         StabilityScore: stabilityScore,
-        Trend:          trend,
-        Reason:         reason,
+        Reason:         BuildReason(accepted, candidate.Score, current.Score, stabilityScore-float64(current.Score)),
     }
     if err := l.eventStore.Append(ev); err != nil {
-        return result, accepted, fmt.Errorf("[evolution] [ERR_EVENT_STORE_WRITE_FAILED] échec écriture event store for sequence %d: %w", l.sequence, err)
+        return result, accepted, fmt.Errorf("échec écriture event store : %w", err)
     }
 
     return result, accepted, nil
@@ -90,20 +73,4 @@ func (l *SafeEvolutionLoopV3) StabilityScore() float64 {
         sum += v
     }
     return sum / float64(len(l.detector.window))
-}
-
-// trendDescription convertit une pente en mot lisible.
-func TrendDescription(slope float64) string {
-    switch {
-    case slope > 1.0:
-        return "en forte hausse 📈"
-    case slope > 0.1:
-        return "en légère hausse ↗️"
-    case slope < -1.0:
-        return "en forte baisse 📉"
-    case slope < -0.1:
-        return "en légère baisse ↘️"
-    default:
-        return "stable ➡️"
-    }
 }
