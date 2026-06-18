@@ -7,26 +7,31 @@ import (
 )
 
 type Worker struct {
-	queue       *EventQueue
-	loop        *SafeEvolutionLoopV3
-	rewarder    Rewarder
-	Running     bool
-	concurrency int
-	processed   map[string]bool
-	offset      int64 // position de lecture dans le fichier de queue
-	processedCnt int  // compteur pour nettoyage périodique
+	queue        *EventQueue
+	loop         *SafeEvolutionLoopV3
+	rewarder     Rewarder
+	Running      bool
+	concurrency  int
+	processed    map[string]bool
+	processedOrd []string // ordered list for LRU-like cleanup
+	offset       int64    // position de lecture dans le fichier de queue
+	processedCnt int      // compteur pour nettoyage périodique
 }
 
-const processedCleanupThreshold = 1000
+const (
+	processedCleanupThreshold = 1000
+	maxProcessedRetention     = 500 // keep last 500 entries for deduplication
+)
 
 func NewWorker(q *EventQueue, loop *SafeEvolutionLoopV3, rewarder Rewarder) *Worker {
 	return &Worker{
-		queue:     q,
-		loop:      loop,
-		rewarder:  rewarder,
-		concurrency: 1,
-		processed: make(map[string]bool),
-		offset:    0,
+		queue:        q,
+		loop:         loop,
+		rewarder:     rewarder,
+		concurrency:  1,
+		processed:    make(map[string]bool),
+		processedOrd: make([]string, 0, processedCleanupThreshold),
+		offset:       0,
 	}
 }
 
@@ -53,6 +58,7 @@ func (w *Worker) Start() {
 				continue
 			}
 			w.processed[e.ID] = true
+			w.processedOrd = append(w.processedOrd, e.ID)
 			w.processedCnt++
 
 			// Cleanup périodique de la map processed pour éviter une croissance infinie
@@ -65,16 +71,28 @@ func (w *Worker) Start() {
 	}
 }
 
-// cleanupProcessed supprime les entrées de la map processed.
-// Après cleanup, tous les événements déjà traités seront rejoués si le worker redémarre
-// (ce qui est le comportement souhaité : idempotence via la map).
+// cleanupProcessed supprime les entrées anciennes de la map processed.
+// On garde les maxProcessedRetention dernières entrées pour maintenir la déduplication.
+// Les entrées plus anciennes sont supprimées (répétition possible en cas de crash restart,
+// ce qui est acceptable car le traitement est idempotent).
 func (w *Worker) cleanupProcessed() {
-	// Conserver les 100 derniers IDs pour le cas où le worker redémarre
-	// On ne peut pas simplement vider la map car on perdrait la déduplication.
-	// On garde la map telle quelle mais on note que sa taille est bornée par le nombre
-	// d'événements entre deux cleanups (processedCleanupThreshold).
-	// Une amélioration future serait d'utiliser un LRU cache borné.
-	slog.Info("worker: cleanup processed map", "size", len(w.processed))
+	if len(w.processedOrd) <= maxProcessedRetention {
+		slog.Debug("worker: cleanup skipped, below threshold", "size", len(w.processed))
+		return
+	}
+
+	// Identifier les IDs à supprimer (les plus anciens)
+	toRemove := w.processedOrd[:len(w.processedOrd)-maxProcessedRetention]
+
+	// Supprimer de la map
+	for _, id := range toRemove {
+		delete(w.processed, id)
+	}
+
+	// Garder seulement les derniers
+	w.processedOrd = w.processedOrd[len(toRemove):]
+
+	slog.Info("worker: cleanup processed map", "removed", len(toRemove), "remaining", len(w.processedOrd))
 }
 
 func (w *Worker) process(e QueueEvent) error {
