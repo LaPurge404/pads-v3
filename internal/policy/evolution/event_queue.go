@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"sync"
 )
@@ -89,6 +90,8 @@ func (q *EventQueue) LoadAll() ([]QueueEvent, error) {
 		var e QueueEvent
 		if err := json.Unmarshal(scanner.Bytes(), &e); err == nil {
 			events = append(events, e)
+		} else {
+			slog.Warn("event_queue: skipped malformed JSON line", "error", err)
 		}
 	}
 	return events, scanner.Err()
@@ -117,6 +120,8 @@ func (q *EventQueue) ReadFrom() ([]QueueEvent, error) {
 		var e QueueEvent
 		if err := json.Unmarshal(scanner.Bytes(), &e); err == nil {
 			events = append(events, e)
+		} else {
+			slog.Warn("event_queue: skipped malformed JSON line", "error", err)
 		}
 	}
 
