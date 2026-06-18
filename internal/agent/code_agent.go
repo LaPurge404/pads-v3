@@ -32,6 +32,11 @@ func NewCodeAgentDefault() *CodeAgent {
 	return NewCodeAgent(NewDefaultLLMClient())
 }
 
+// MinConfidence returns the minimum confidence threshold for this agent.
+func (a *CodeAgent) MinConfidence() float64 {
+	return a.minConfidence
+}
+
 // Solve generates a plan to fix the given task using the LLM.
 func (a *CodeAgent) Solve(task Task, ctx Context) (Plan, error) {
 	if task.Kind != TaskFixBroken {

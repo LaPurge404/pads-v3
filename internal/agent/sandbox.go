@@ -274,6 +274,11 @@ type SandboxExecutor struct {
 	autoCleanup bool
 }
 
+// ProjectRoot returns the project root path.
+func (e *SandboxExecutor) ProjectRoot() string {
+	return e.projectRoot
+}
+
 // NewSandboxExecutor creates a new executor with sandbox testing.
 func NewSandboxExecutor(projectRoot string, autoCleanup bool) *SandboxExecutor {
 	return &SandboxExecutor{

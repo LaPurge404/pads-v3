@@ -14,14 +14,27 @@ type SafeEvolutionLoopV3 struct {
 }
 
 func NewSafeEvolutionLoopV3(o *Orchestrator, es *EventStore, wal *WAL, detector *AntiCollapseDetector, mode Mode, selector Selector) *SafeEvolutionLoopV3 {
-    return &SafeEvolutionLoopV3{
-        orchestrator: o,
-        eventStore:   es,
-        detector:     detector,
-        rollback:     NewRollbackManager(wal, detector),
-        mode:         mode,
-        selector:     selector,
-    }
+	return &SafeEvolutionLoopV3{
+		orchestrator: o,
+		eventStore:   es,
+		detector:     detector,
+		rollback:     NewRollbackManager(wal, detector),
+		mode:         mode,
+		selector:     selector,
+	}
+}
+
+// NewSafeEvolutionLoopV3Minimal creates a SafeEvolutionLoopV3 with default dependencies
+// suitable for agent pools where shared evolution state is needed but the full
+// WAL/event-store infrastructure is not required.
+// The loop uses default stability gate (window=10, threshold=0.5) and a
+// nil event store (no persistence).
+func NewSafeEvolutionLoopV3Minimal(mode Mode, selector Selector) *SafeEvolutionLoopV3 {
+	detector := NewAntiCollapseDetector(10, 0.5)
+	gate := NewStabilityGateWithDetector(detector)
+	evaluator := NewMultiCycleEvaluator()
+	orchestrator := NewOrchestrator(evaluator, gate)
+	return NewSafeEvolutionLoopV3(orchestrator, nil, nil, detector, mode, selector)
 }
 
 func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, weight float64) (bool, error) {
