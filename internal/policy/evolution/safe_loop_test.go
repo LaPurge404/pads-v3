@@ -18,7 +18,7 @@ func TestSafeEvolutionLoopV3_Evolve(t *testing.T) {
 
     loop := evolution.NewSafeEvolutionLoopV3(orch, es, wal, detector, evolution.ModeStable, bandit)
 
-    result, accepted, err := loop.Evolve(
+    accepted, err := loop.Evolve(
         evolution.Candidate{Score: 100},
         evolution.Candidate{Score: 50},
         1.0,
@@ -26,8 +26,8 @@ func TestSafeEvolutionLoopV3_Evolve(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    if !accepted || result.Score != 100 {
-        t.Fatalf("unexpected result: %+v, accepted=%v", result, accepted)
+    if !accepted || int(loop.StabilityScore()) != 100 {
+        t.Fatalf("unexpected result: accepted=%v stability=%.0f", accepted, loop.StabilityScore())
     }
 
     // Vérifier que l'événement a été stocké

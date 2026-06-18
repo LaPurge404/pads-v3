@@ -164,27 +164,26 @@ func (s *Server) evaluateAgentCandidate(
 	evCandidate := evolution.Candidate{Score: candidate.Score()}
 	evCurrent := evolution.Candidate{Score: currentScore}
 
-	cycleResult, accepted, err := loop.Evolve(evCandidate, evCurrent, weight)
+	accepted, err := loop.Evolve(evCandidate, evCurrent, weight)
 	if err != nil {
 		return nil, false, err
 	}
 
 	// Compute reward
 	stabilityBefore := float64(currentScore)
-	stabilityAfter := float64(cycleResult.Score)
+	stabilityAfter := loop.StabilityScore()
 	arm := s.selector.Select()
 	reward := computeReward(stabilityBefore, stabilityAfter, accepted)
 	s.selector.Update(arm, reward)
 
 	return &evolution.AgentResult{
-		CandidateID:   candidate.ID,
-		Score:         cycleResult.Score,
-		Accepted:      accepted,
-		CycleResult:   cycleResult,
+		CandidateID:    candidate.ID,
+		Score:          int(stabilityAfter),
+		Accepted:       accepted,
 		StabilityScore: stabilityAfter,
-		Reason:        evolution.BuildReason(accepted, candidate.Score(), currentScore, stabilityAfter-stabilityBefore),
-		UCBArm:        arm,
-		Reward:        reward,
+		Reason:         evolution.BuildReason(accepted, candidate.Score(), currentScore, stabilityAfter-stabilityBefore),
+		UCBArm:         arm,
+		Reward:         reward,
 	}, accepted, nil
 }
 

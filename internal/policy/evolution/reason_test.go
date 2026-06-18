@@ -46,7 +46,7 @@ func TestReasonInEvent(t *testing.T) {
     orch := evolution.NewOrchestrator(evolution.NewMultiCycleEvaluator(), evolution.NewStabilityGate())
 
     loop := evolution.NewSafeEvolutionLoopV3(orch, es, wal, detector, evolution.ModeStable, selector)
-    _, accepted, err := loop.Evolve(evolution.Candidate{Score: 80}, evolution.Candidate{Score: 50}, 1.0)
+    accepted, err := loop.Evolve(evolution.Candidate{Score: 80}, evolution.Candidate{Score: 50}, 1.0)
     if err != nil {
         t.Fatal(err)
     }

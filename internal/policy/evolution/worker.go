@@ -80,7 +80,7 @@ func (w *Worker) cleanupProcessed() {
 func (w *Worker) process(e QueueEvent) error {
 	oldStability := w.loop.StabilityScore()
 
-	result, accepted, err := w.loop.Evolve(
+	accepted, err := w.loop.Evolve(
 		Candidate{Score: e.Candidate},
 		Candidate{Score: e.Current},
 		e.Weight,
@@ -96,13 +96,6 @@ func (w *Worker) process(e QueueEvent) error {
 		reward := w.rewarder.ComputeReward(oldStability, newStability, accepted)
 		w.loop.selector.Update(string(e.Mode), reward)
 	}
-
-	// Le résultat de Evolve (CycleResult) contient les détails de l'évolution
-	// mais n'est pas utilisé ici car :
-	//  - l'état du loop est déjà mis à jour par Evolve()
-	//  - le rewarder met à jour le sélecteur via ComputeReward
-	//  - l'écriture dans le WAL est faite par l'appelant (safe_loop_v3.go)
-	_ = result
 
 	return nil
 }

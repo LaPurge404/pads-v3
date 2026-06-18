@@ -111,11 +111,11 @@ func (al *AgentLoop) Evaluate(candidate *AgentCandidate, currentScore int, weigh
 	candidate.Strategy = arm
 
 	// Run evolution evaluation
-	cycleResult, accepted, err := al.loop.Evolve(evCandidate, evCurrent, weight)
+	accepted, err := al.loop.Evolve(evCandidate, evCurrent, weight)
 	if err != nil {
 		return AgentResult{
 			CandidateID: candidate.ID,
-			Accepted:    false,
+			Accepted:   false,
 			Reason:     err.Error(),
 			UCBArm:     arm,
 		}
@@ -123,7 +123,7 @@ func (al *AgentLoop) Evaluate(candidate *AgentCandidate, currentScore int, weigh
 
 	// Compute reward for UCB
 	stabilityBefore := float64(currentScore)
-	stabilityAfter := float64(cycleResult.Score)
+	stabilityAfter := al.loop.StabilityScore()
 	reward := al.rewarder.ComputeReward(stabilityBefore, stabilityAfter, accepted)
 
 	// Update UCB selector with the outcome
@@ -133,10 +133,9 @@ func (al *AgentLoop) Evaluate(candidate *AgentCandidate, currentScore int, weigh
 	stabilityScore := al.loop.StabilityScore()
 
 	return AgentResult{
-		CandidateID:   candidate.ID,
-		Score:         cycleResult.Score,
+		CandidateID:    candidate.ID,
+		Score:         int(stabilityScore),
 		Accepted:      accepted,
-		CycleResult:   cycleResult,
 		StabilityScore: stabilityScore,
 		Reason:        BuildReason(accepted, candidate.Score(), currentScore, stabilityAfter-stabilityBefore),
 		UCBArm:        arm,
