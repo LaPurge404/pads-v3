@@ -220,7 +220,7 @@ evolution.NewMultiCycleEvaluator(),
 evolution.NewStabilityGate(),
 )
 es := evolution.NewEventStore("evolution.log")
-wal := evolution.NewWAL()
+wal := evolution.NewWAL("evolution.wal")
 detector := evolution.NewAntiCollapseDetector(5, 10.0)
 return evolution.NewSafeEvolutionLoopV3(orch, es, wal, detector, evolution.ModeStable, selector)
 }

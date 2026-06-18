@@ -12,7 +12,7 @@ func TestSafeEvolutionLoopV3_Evolve(t *testing.T) {
         evolution.NewStabilityGate(),
     )
     es := evolution.NewEventStore(t.TempDir() + "/ev.log")
-    wal := evolution.NewWAL()
+    wal := evolution.NewWAL("")
     detector := evolution.NewAntiCollapseDetector(5, 10.0)
     bandit := evolution.NewBandit()
 

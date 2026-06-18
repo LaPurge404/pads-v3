@@ -7,7 +7,7 @@ import (
 )
 
 func TestRollbackManager_NoRollbackWhenStable(t *testing.T) {
-    wal := evolution.NewWAL()
+    wal := evolution.NewWAL("")
     detector := evolution.NewAntiCollapseDetector(5, 10.0)
     detector.Add(10)
     detector.Add(12)
@@ -20,7 +20,7 @@ func TestRollbackManager_NoRollbackWhenStable(t *testing.T) {
 }
 
 func TestRollbackManager_RollbackWhenOscillating(t *testing.T) {
-    wal := evolution.NewWAL()
+    wal := evolution.NewWAL("")
     detector := evolution.NewAntiCollapseDetector(3, 1.0)
     detector.Add(10)
     detector.Add(100)

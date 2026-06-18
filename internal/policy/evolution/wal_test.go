@@ -7,7 +7,7 @@ import (
 )
 
 func TestWAL_Append(t *testing.T) {
-    wal := evolution.NewWAL()
+    wal := evolution.NewWAL("")
     entry := wal.Append(80, 50, 1.0, evolution.ModeStable)
     if entry.CandidateScore != 80 {
         t.Fatalf("expected 80, got %d", entry.CandidateScore)
@@ -18,7 +18,7 @@ func TestWAL_Append(t *testing.T) {
 }
 
 func TestWAL_LastEntry(t *testing.T) {
-    wal := evolution.NewWAL()
+    wal := evolution.NewWAL("")
     wal.Append(10, 5, 0.5, evolution.ModeBandit)
     last := wal.LastEntry()
     if last == nil || last.CandidateScore != 10 {
@@ -51,7 +51,7 @@ func TestWALStore_PersistAndReplay(t *testing.T) {
 }
 
 func TestWALBridge_Append(t *testing.T) {
-    mem := evolution.NewWAL()
+    mem := evolution.NewWAL("")
     disk := evolution.NewWALStore(t.TempDir() + "/bridge.log")
     bridge := evolution.NewWALBridge(mem, disk)
 

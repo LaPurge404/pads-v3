@@ -18,7 +18,7 @@ evolution.NewMultiCycleEvaluator(),
 evolution.NewStabilityGate(),
 )
 es := evolution.NewEventStore("test_ev.log")
-wal := evolution.NewWAL()
+wal := evolution.NewWAL("")
 detector := evolution.NewAntiCollapseDetector(5, 10.0)
 bandit := evolution.NewBandit()
 loop := evolution.NewSafeEvolutionLoopV3(orch, es, wal, detector, evolution.ModeStable, bandit)

@@ -40,7 +40,7 @@ func TestConfidenceInResult(t *testing.T) {
 func TestReasonInEvent(t *testing.T) {
     // Construire une boucle et vérifier que la raison n'est pas vide
     es := evolution.NewEventStore(t.TempDir() + "/ev.log")
-    wal := evolution.NewWAL()
+    wal := evolution.NewWAL("")
     detector := evolution.NewAntiCollapseDetector(5, 10.0)
     selector := evolution.NewUCBSelector(123)
     orch := evolution.NewOrchestrator(evolution.NewMultiCycleEvaluator(), evolution.NewStabilityGate())
