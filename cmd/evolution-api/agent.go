@@ -1,10 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"pads-v3/internal/policy/evolution"
 )
@@ -211,7 +213,7 @@ func buildAgentLoop(selector evolution.Selector, mode evolution.Mode) *evolution
 		evolution.NewStabilityGate(),
 	)
 	es := evolution.NewEventStore("evolution-agent.log")
-	wal := evolution.NewWAL()
+	wal := evolution.NewWAL("evolution-agent.wal")
 	detector := evolution.NewAntiCollapseDetector(5, 10.0)
 	return evolution.NewSafeEvolutionLoopV3(orch, es, wal, detector, mode, selector)
 }
@@ -224,18 +226,21 @@ func computeReward(oldStability, newStability float64, accepted bool) float64 {
 	return newStability - oldStability
 }
 
-// generateAgentID creates a unique ID for an agent candidate.
+// generateAgentID creates a unique ID for an agent candidate using crypto/rand.
 func generateAgentID() string {
 	b := make([]byte, 8)
-	readRand(b)
+	if _, err := readRand(b); err != nil {
+		// Fallback: timestamp-based if crypto/rand fails (should never happen)
+		b[0] = byte(time.Now().UnixNano() & 0xff)
+		b[1] = byte((time.Now().UnixNano() >> 8) & 0xff)
+		b[2] = byte((time.Now().UnixNano() >> 16) & 0xff)
+	}
 	return hexEncode(b)
 }
 
-// readRand fills b with random bytes (placeholder - use crypto/rand in production).
-func readRand(b []byte) {
-	for i := range b {
-		b[i] = byte(i*17%256 + i)
-	}
+// readRand fills b with cryptographically secure random bytes.
+func readRand(b []byte) (int, error) {
+	return rand.Read(b)
 }
 
 func hexEncode(b []byte) string {
