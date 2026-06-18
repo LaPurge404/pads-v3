@@ -6,20 +6,25 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"pads-v3/internal/codeanalysis/semantic"
 	"pads-v3/internal/policy/evolution"
+	"pads-v3/internal/semantic/memory"
 )
 
 // EvolutionConnector connects the CodeAgent to the evolution engine.
 // It transforms agent suggestions into evolution candidates and evaluates them.
 type EvolutionConnector struct {
-	codeAgent     *CodeAgent
-	sandboxExec   *SandboxExecutor
-	agentLoop     *evolution.AgentLoop
-	currentScore  int
-	projectRoot   string
+	codeAgent    *CodeAgent
+	sandboxExec  *SandboxExecutor
+	agentLoop    *evolution.AgentLoop
+	semMemory    *memory.SemanticMemory // lazily initialized
+	semMemOnce   sync.Once
+	semMemErr    error
+	currentScore int
+	projectRoot  string
 }
 
 // NewEvolutionConnector creates a new connector with all dependencies.
@@ -37,6 +42,23 @@ func NewEvolutionConnector(
 		currentScore: currentScore,
 		projectRoot:  projectRoot,
 	}
+}
+
+// getSemanticMemory lazily initializes and returns the shared SemanticMemory.
+// The first call triggers the initial project index. Subsequent calls are no-ops.
+func (ec *EvolutionConnector) getSemanticMemory() *memory.SemanticMemory {
+	ec.semMemOnce.Do(func() {
+		// Store memory dir under projectRoot so it lives alongside the project data
+		ec.semMemory, ec.semMemErr = memory.New(ec.projectRoot, ec.projectRoot+"/.pads/semantic")
+		if ec.semMemErr == nil {
+			ec.semMemErr = ec.semMemory.IncrementallyIndex()
+		}
+		if ec.semMemErr != nil {
+			log.Printf("[evolution_bridge] getSemanticMemory: failed to init memory: %v", ec.semMemErr)
+			ec.semMemory = nil
+		}
+	})
+	return ec.semMemory
 }
 
 // SuggestAndEvaluate is the main entry point:
@@ -82,7 +104,7 @@ func (ec *EvolutionConnector) SuggestAndEvaluate(task Task, ctx Context) (*evolu
 	)
 
 	// Step 3b: Run lazy semantic analysis on the target file (if available)
-	semanticRisk, semanticReasons, modImpact := runSemanticAnalysis(ec.projectRoot, task.Target, resp)
+	semanticRisk, semanticReasons, modImpact := runSemanticAnalysis(ec.projectRoot, task.Target, resp, ec.getSemanticMemory())
 	candidate.ModImpact = modImpact
 
 	// Step 4: Evaluate with evolution engine
@@ -136,6 +158,9 @@ type CodeAgentForEvolution struct {
 	AgentLoop    *evolution.AgentLoop
 	CurrentScore int
 	ProjectRoot  string
+	semMemory    *memory.SemanticMemory
+	semMemOnce   sync.Once
+	semMemErr    error
 }
 
 // NewCodeAgentForEvolution creates a fully integrated agent.
@@ -147,6 +172,21 @@ func NewCodeAgentForEvolution(llm LLMClient, projectRoot string, agentLoop *evol
 		CurrentScore: 50, // Default starting score
 		ProjectRoot:  projectRoot,
 	}
+}
+
+// getSemanticMemory lazily initializes and returns the shared SemanticMemory.
+func (cae *CodeAgentForEvolution) getSemanticMemory() *memory.SemanticMemory {
+	cae.semMemOnce.Do(func() {
+		cae.semMemory, cae.semMemErr = memory.New(cae.ProjectRoot, cae.ProjectRoot+"/.pads/semantic")
+		if cae.semMemErr == nil {
+			cae.semMemErr = cae.semMemory.IncrementallyIndex()
+		}
+		if cae.semMemErr != nil {
+			log.Printf("[CodeAgentForEvolution] getSemanticMemory: failed to init memory: %v", cae.semMemErr)
+			cae.semMemory = nil
+		}
+	})
+	return cae.semMemory
 }
 
 // NewCodeAgentForEvolutionDefault creates a fully integrated agent with Nvidia LLM (default).
@@ -181,7 +221,7 @@ func (cae *CodeAgentForEvolution) RunTask(task Task, ctx Context) (*evolution.Ag
 	)
 
 	// Lazy semantic analysis on the first file touched by the plan
-	semanticRisk, semanticReasons, modImpact := runSemanticAnalysis(cae.ProjectRoot, task.Target, resp)
+	semanticRisk, semanticReasons, modImpact := runSemanticAnalysis(cae.ProjectRoot, task.Target, resp, cae.getSemanticMemory())
 	candidate.ModImpact = modImpact
 
 	// Evaluate through evolution engine
@@ -221,9 +261,12 @@ func computeSandboxScore(res SandboxResult) int {
 
 // runSemanticAnalysis extracts the first file target from the plan and runs
 // the semantic analyzer on it. Returns (risk 0-1, reasons, modImpact 0-1).
+// If semMem is non-nil, it also queries the global call graph (CallersOf) to
+// determine how many external callers the modified symbol has — high caller
+// count means higher risk of regressions.
 // It is lazy — only runs when a target file is present and is a Go file.
 // This avoids the overhead of AST parsing when the agent only runs commands.
-func runSemanticAnalysis(projectRoot, targetFile string, plan Plan) (risk float64, reasons []string, modImpact float64) {
+func runSemanticAnalysis(projectRoot, targetFile string, plan Plan, semMem *memory.SemanticMemory) (risk float64, reasons []string, modImpact float64) {
 	// Use the explicit target if available, otherwise fall back to first write action
 	filePath := targetFile
 	if filePath == "" {
@@ -251,6 +294,26 @@ func runSemanticAnalysis(projectRoot, targetFile string, plan Plan) (risk float6
 	// RiskScore (0-1) is our primary risk metric
 	risk = sum.RiskScore
 	reasons = sum.RiskReasons
+
+	// If we have a semantic memory with global call graph, check caller count
+	// for the first exported symbol we modified — many external callers = higher risk.
+	if semMem != nil && len(sum.Symbols) > 0 {
+		for _, sym := range sum.Symbols {
+			if sym.Exported {
+				callers, err := semMem.CallersOf(sym.Name, "")
+				if err == nil && callers != nil {
+					n := len(callers)
+					if n > 0 {
+						reasons = append(reasons, fmt.Sprintf("modified exported symbol %q has %d external caller(s)", sym.Name, n))
+						// Escalate risk: each caller beyond the first adds 0.05, capped at 1.0
+						risk = min(1.0, risk+float64(min(n, 10))*0.05)
+					}
+				}
+				break // only use first exported symbol for escalation
+			}
+		}
+	}
+
 	// ModImpact is derived from exported symbol count vs total — high exported ratio = high impact
 	modImpact = risk
 	return risk, reasons, modImpact
