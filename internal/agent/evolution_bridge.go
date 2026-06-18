@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"pads-v3/internal/policy/evolution"
 )
@@ -101,7 +102,11 @@ func (ec *EvolutionConnector) GetUCBStats() map[string]evolution.UCBArmStats {
 // generateID creates a unique ID for a candidate.
 func generateID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback : pseudo-random basé sur le temps si rand échoue
+		b[0] = byte(time.Now().UnixNano() & 0xff)
+		b[1] = byte((time.Now().UnixNano() >> 8) & 0xff)
+	}
 	return hex.EncodeToString(b)
 }
 

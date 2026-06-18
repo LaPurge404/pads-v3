@@ -136,7 +136,9 @@ func postEvolve(apiURL, token string, candidate, current int, weight float64, mo
         return nil, fmt.Errorf("échec requête (%d)", resp.StatusCode)
     }
     var result map[string]string
-    json.NewDecoder(resp.Body).Decode(&result)
+    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return nil, fmt.Errorf("décodage réponse CI: %w", err)
+    }
     return result, nil
 }
 

@@ -43,11 +43,14 @@ authToken = strings.TrimSpace(string(data))
 }
 }
 if authToken == "" {
-tok := make([]byte, 16)
-rand.Read(tok)
-authToken = hex.EncodeToString(tok)
-slog.Info("Token généré", "token", authToken)
-}
+		tok := make([]byte, 16)
+		if _, err := rand.Read(tok); err != nil {
+			slog.Error("génération token aléatoire", "error", err)
+			os.Exit(1)
+		}
+		authToken = hex.EncodeToString(tok)
+		slog.Info("Token généré", "token", authToken)
+	}
 
 queue, err := evolution.NewEventQueue("event_queue.log")
 if err != nil {
@@ -78,13 +81,13 @@ mux := http.NewServeMux()
 mux.HandleFunc("/", s.dashboard)
 mux.HandleFunc("/health", s.health)
 mux.HandleFunc("/dashboard/enriched", s.dashboardEnriched)
-mux.HandleFunc("/evolve", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.enqueueEvolve))))
-mux.HandleFunc("/state", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.state))))
-mux.HandleFunc("/select", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.handleSelect))))
-mux.HandleFunc("/workspace", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.workspace))))
-mux.HandleFunc("/agent/evolve", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.handleAgentEvolve))))
-mux.HandleFunc("/agent/status", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.handleAgentStatus))))
-mux.HandleFunc("/agent/strategies", s.authMiddleware(s.rl.Middleware(evolution.LoggingMiddleware(s.handleAgentStrategies))))
+mux.HandleFunc("/evolve", s.rl.Middleware(s.authMiddleware(evolution.LoggingMiddleware(s.enqueueEvolve))))
+mux.HandleFunc("/state", s.rl.Middleware(s.authMiddleware(evolution.LoggingMiddleware(s.state))))
+mux.HandleFunc("/select", s.rl.Middleware(s.authMiddleware(evolution.LoggingMiddleware(s.handleSelect))))
+mux.HandleFunc("/workspace", s.rl.Middleware(s.authMiddleware(evolution.LoggingMiddleware(s.workspace))))
+mux.HandleFunc("/agent/evolve", s.rl.Middleware(s.authMiddleware(evolution.LoggingMiddleware(s.handleAgentEvolve))))
+mux.HandleFunc("/agent/status", s.rl.Middleware(s.authMiddleware(evolution.LoggingMiddleware(s.handleAgentStatus))))
+mux.HandleFunc("/agent/strategies", s.rl.Middleware(s.authMiddleware(evolution.LoggingMiddleware(s.handleAgentStrategies))))
 
 addr := "127.0.0.1:8080"
 if *certFile != "" && *keyFile != "" {
@@ -202,9 +205,13 @@ json.NewEncoder(w).Encode(map[string]string{"arm": arm})
 }
 
 func generateID() string {
-b := make([]byte, 8)
-rand.Read(b)
-return hex.EncodeToString(b)
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback : pseudo-random basé sur le temps si rand échoue
+		b[0] = byte(time.Now().UnixNano() & 0xff)
+		b[1] = byte((time.Now().UnixNano() >> 8) & 0xff)
+	}
+	return hex.EncodeToString(b)
 }
 
 func buildSafeLoop(selector evolution.Selector) *evolution.SafeEvolutionLoopV3 {
