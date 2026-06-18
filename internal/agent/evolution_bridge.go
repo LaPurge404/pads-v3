@@ -261,9 +261,8 @@ func computeSandboxScore(res SandboxResult) int {
 
 // runSemanticAnalysis extracts the first file target from the plan and runs
 // the semantic analyzer on it. Returns (risk 0-1, reasons, modImpact 0-1).
-// If semMem is non-nil, it also queries the global call graph (CallersOf) to
-// determine how many external callers the modified symbol has — high caller
-// count means higher risk of regressions.
+// If semMem is non-nil, it also queries the global call graph (CallersOf,
+// CalleesOf, SymbolImpact) to compute a richer risk score.
 // It is lazy — only runs when a target file is present and is a Go file.
 // This avoids the overhead of AST parsing when the agent only runs commands.
 func runSemanticAnalysis(projectRoot, targetFile string, plan Plan, semMem *memory.SemanticMemory) (risk float64, reasons []string, modImpact float64) {
@@ -295,27 +294,50 @@ func runSemanticAnalysis(projectRoot, targetFile string, plan Plan, semMem *memo
 	risk = sum.RiskScore
 	reasons = sum.RiskReasons
 
-	// If we have a semantic memory with global call graph, check caller count
-	// for the first exported symbol we modified — many external callers = higher risk.
+	// Global call graph queries — enrich risk for every exported symbol found.
 	if semMem != nil && len(sum.Symbols) > 0 {
 		for _, sym := range sum.Symbols {
-			if sym.Exported {
-				callers, err := semMem.CallersOf(sym.Name, "")
-				if err == nil && callers != nil {
-					n := len(callers)
-					if n > 0 {
-						reasons = append(reasons, fmt.Sprintf("modified exported symbol %q has %d external caller(s)", sym.Name, n))
-						// Escalate risk: each caller beyond the first adds 0.05, capped at 1.0
-						risk = min(1.0, risk+float64(min(n, 10))*0.05)
-					}
-				}
-				break // only use first exported symbol for escalation
+			if !sym.Exported {
+				continue
 			}
+			symRisk := 0.0
+
+			// 1. External callers (regression risk): changing this breaks callers.
+			if callers, err := semMem.CallersOf(sym.Name, ""); err == nil && callers != nil {
+				n := len(callers)
+				if n > 0 {
+					reasons = append(reasons, fmt.Sprintf("exported symbol %q has %d external caller(s)", sym.Name, n))
+					symRisk += float64(min(n, 10)) * 0.05
+				}
+			}
+
+			// 2. Callees (blast radius): this symbol calls N others — high N means
+			//    wide downstream impact if its logic changes.
+			if callees, err := semMem.CalleesOf(sym.Name, ""); err == nil && callees != nil {
+				n := len(callees)
+				if n > 3 {
+					reasons = append(reasons, fmt.Sprintf("exported symbol %q calls %d other symbols (wide blast radius)", sym.Name, n))
+					symRisk += float64(min(n-3, 7)) * 0.02
+				}
+			}
+
+			// 3. Full impact: direct + transitive callers via SymbolImpact.
+			if direct, transitive, err := semMem.SymbolImpact(sym.Name, ""); err == nil && (direct > 0 || transitive > 0) {
+				reasons = append(reasons, fmt.Sprintf("symbol %q has %d direct and %d transitive callers", sym.Name, direct, transitive))
+				symRisk += float64(min(transitive, 5)) * 0.03
+				// Use SymbolImpact as modImpact — reflects how widely used this symbol is.
+				symbolImpactScore := float64(direct+transitive) / 10.0
+				modImpact = max(modImpact, min(1.0, symbolImpactScore))
+			}
+
+			risk = min(1.0, risk+symRisk)
 		}
 	}
 
-	// ModImpact is derived from exported symbol count vs total — high exported ratio = high impact
-	modImpact = risk
+	// Fallback modImpact when no SemanticMemory available.
+	if modImpact == 0 {
+		modImpact = risk
+	}
 	return risk, reasons, modImpact
 }
 
