@@ -79,16 +79,23 @@ The token can be supplied via the `PADS_TOKEN` environment variable, a `token.tx
 
 ## 5. Security
 
-* **Token handling** –  
-  1. The server parses a command‑line flag (`-token`).  
-  2. If empty, it reads the environment variable `PADS_TOKEN`.  
-  3. If still empty, it looks for `$HOME/.pads/token.txt`; the file content (trimmed) becomes the token.  
-  4. If no token is found, a fresh 128‑bit token is generated, stored in `token.txt`, and used for the session.  
-  5. Every protected request must contain `Authorization: Bearer ***`; any deviation yields HTTP 401.  
+* **Token handling** – Token resolution order: 1) `PADS_TOKEN` environment variable; 2) `token.txt` file in the working directory (configurable via `-token-file`); 3) auto-generated 128-bit random token written to `token.txt`. The flag `-token` is deprecated. Every protected request must contain `Authorization: Bearer ***` — any deviation yields HTTP 401.
 
-* **Rate limiting** – a token‑bucket limiter instantiated as `evolution.NewRateLimiter(10, 1*time.Minute)` allows **10 requests per minute** globally. Exceeding the quota returns HTTP 429 with a `Retry-After` header.  
+* **Token rotation** – `POST /rotate` (authenticated) generates a new token, writes it to `token.txt`, and returns it in the response.
 
-* **TLS** – optional. When the flags `-cert <path>` and `-key <path>` are supplied the HTTP server starts with `ListenAndServeTLS`; otherwise it uses plain `ListenAndServe`. No TLS termination proxy is required.
+* **Rate limiting** – a token-bucket limiter (`evolution.NewRateLimiter(10, 1*time.Minute)`) allows **10 requests per minute** per distinct Bearer token. A background goroutine cleans up stale/inactive tokens every 5 minutes and enforces a max of 1000 distinct tokens (LRU eviction). Exceeding the quota returns HTTP 429 with a `Retry-After` header.
+
+* **Middleware chain order** – Auth is checked **before** rate limiting: `securityHeaders → LoggingMiddleware → authMiddleware → rateLimiterMiddleware → handler`. This ensures unauthenticated requests do not consume rate limit quota.
+
+* **HTTP security headers** – Every response includes `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `X-Request-ID`.
+
+* **Request timeout** – All handlers are wrapped in `http.TimeoutHandler` (default: 30 seconds, configurable via `-timeout`). Requests exceeding the timeout receive a `"Request timed out"` response.
+
+* **TLS** – optional. When `-cert <path>` and `-key <path>` are supplied the server uses `ListenAndServeTLS`; otherwise plain `ListenAndServe`. For local testing: generate a self-signed cert with `openssl req -new -x509 -key server.key -out server.crt -days 365 -subj "/CN=localhost"`.
+
+* **WAL persistence** – The Write-Ahead Log (`evolution.wal`) is fsync'd to disk on every append. On restart, entries are reloaded from disk. File format: one JSON line per entry.
+
+* **LLM API keys** – `NVIDIA_API_KEY` (default), `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — read from environment, never hardcoded.
 
 ---
 
@@ -208,6 +215,7 @@ Enriches the agent context with:
 
 | Variable | Description |
 |----------|-------------|
+| `NVIDIA_API_KEY` | NVIDIA NIM API key (default LLM provider) |
 | `OPENAI_API_KEY` | OpenAI API key for GPT models |
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
 | `OPENAI_BASE_URL` | Custom OpenAI-compatible endpoint |
