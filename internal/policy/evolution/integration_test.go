@@ -62,15 +62,18 @@ Current   int     `json:"current"`
 Weight    float64 `json:"weight"`
 Mode      string  `json:"mode"`
 }
-json.NewDecoder(r.Body).Decode(&req)
-event := evolution.QueueEvent{
-ID:        "test",
-Type:      "evolve",
-Candidate: req.Candidate,
-Current:   req.Current,
-Weight:    req.Weight,
-Mode:      evolution.Mode(req.Mode),
-}
+if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	event := evolution.QueueEvent{
+		ID:        "test",
+		Type:      "evolve",
+		Candidate: req.Candidate,
+		Current:   req.Current,
+		Weight:    req.Weight,
+		Mode:      evolution.Mode(req.Mode),
+	}
 s.queue.Enqueue(event)
 w.WriteHeader(http.StatusAccepted)
 w.Write([]byte(`{"status":"queued"}`))
@@ -123,11 +126,13 @@ if err != nil {
 t.Fatal(err)
 }
 if resp2.StatusCode != http.StatusOK {
-t.Errorf("expected 200, got %d", resp2.StatusCode)
-}
-var state evolution.SystemState
-json.NewDecoder(resp2.Body).Decode(&state)
-if state.Sequence == 0 {
-t.Error("expected non-zero sequence")
-}
+		t.Errorf("expected 200, got %d", resp2.StatusCode)
+	}
+	var state evolution.SystemState
+	if err := json.NewDecoder(resp2.Body).Decode(&state); err != nil {
+		t.Fatalf("invalid state response: %v", err)
+	}
+	if state.Sequence == 0 {
+		t.Error("expected non-zero sequence")
+	}
 }

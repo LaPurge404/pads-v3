@@ -97,6 +97,12 @@ func (w *Worker) process(e QueueEvent) error {
 		w.loop.selector.Update(string(e.Mode), reward)
 	}
 
+	// Le résultat de Evolve (CycleResult) contient les détails de l'évolution
+	// mais n'est pas utilisé ici car :
+	//  - l'état du loop est déjà mis à jour par Evolve()
+	//  - le rewarder met à jour le sélecteur via ComputeReward
+	//  - l'écriture dans le WAL est faite par l'appelant (safe_loop_v3.go)
 	_ = result
+
 	return nil
 }

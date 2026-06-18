@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode"
 )
 
 // CodeAgent is an Agent that uses an LLM to generate code modifications.
@@ -155,21 +156,27 @@ func isDiff(patch string) bool {
 }
 
 // stripDiffMarkers removes diff headers from a patch to get clean code.
+// Keeps: context lines (starting with space), additions (starting with +),
+// and non-deletion lines outside diff sections. Removes diff headers and deletions.
 func stripDiffMarkers(patch string) string {
 	lines := strings.Split(patch, "\n")
 	var result []string
 	inDiff := false
 	for _, line := range lines {
+		// Skip diff header lines
 		if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") ||
 			strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "index ") ||
 			strings.HasPrefix(line, "@@") {
 			inDiff = true
 			continue
 		}
-		if !inDiff || (!strings.HasPrefix(line, "-") && !strings.HasPrefix(line, " ")) {
-			inDiff = false
+		// Deletions are skipped when inside a diff section
+		if inDiff && strings.HasPrefix(line, "-") {
+			continue
 		}
-		if !inDiff && !strings.HasPrefix(line, "-") {
+		// Append: not a deletion AND (outside diff OR context line OR addition)
+		if !strings.HasPrefix(line, "-") &&
+			(!inDiff || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "+")) {
 			result = append(result, line)
 		}
 	}
@@ -190,5 +197,11 @@ func testNameForFile(filePath string) string {
 	// e.g., add.go -> TestAdd
 	base := strings.TrimSuffix(filePath, ".go")
 	base = strings.TrimSuffix(base, ".py")
-	return "Test" + strings.Title(base)
+	// Capitalize first rune (replacement de strings.Title déprécié depuis Go 1.18)
+	if len(base) > 0 {
+		runes := []rune(base)
+		runes[0] = unicode.ToUpper(runes[0])
+		return "Test" + string(runes)
+	}
+	return "Test" + base
 }

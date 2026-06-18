@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"pads-v3/internal/policy/evolution"
@@ -248,10 +247,4 @@ func hexEncode(b []byte) string {
 		result[i*2+1] = hexChars[v&0x0f]
 	}
 	return string(result)
-}
-
-// getProjectRoot finds the project root from the executable path.
-func getProjectRoot() string {
-	exe, _ := filepath.Abs(".")
-	return exe
 }

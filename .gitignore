@@ -27,6 +27,7 @@ test_project/
 evolution-replay
 
 # PADS runtime artifacts
+*.wal
 event_queue.log
 evolution.log
 worker_offset.txt
