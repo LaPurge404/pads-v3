@@ -148,39 +148,145 @@ func detectLanguage(filePath string) string {
 	}
 }
 
+// DiffState représente l'état courant du parsing d'un diff.
+type DiffState int
+
+const (
+	// StateTextHunk: hors section diff, on copie tel quel
+	StateTextHunk DiffState = iota
+	// StateDiffHeader: dans l'en-tête d'un diff (---, +++, diff, index)
+	StateDiffHeader
+	// StateHunkMeta: ligne de métadonnées de hunk (@@)
+	StateHunkMeta
+	// StateHunkBody: corps du hunk (contexte, additions, suppressions)
+	StateHunkBody
+)
+
+// diffHeaderPrefix retourne true si la ligne est un en-tête de diff.
+func diffHeaderPrefix(line string) bool {
+	return strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") ||
+		strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "index ")
+}
+
+// isHunkMeta retourne true si la ligne est une métadonnée de hunk.
+func isHunkMeta(line string) bool {
+	return strings.HasPrefix(line, "@@") && strings.Contains(line, "@@")
+}
+
+// isDiffMetaLine returns true for diff metadata lines that should be skipped
+// (new file mode, deleted file mode, Binary files, similarity index, etc).
+func isDiffMetaLine(line string) bool {
+	return strings.HasPrefix(line, "new file mode ") ||
+		strings.HasPrefix(line, "deleted file mode ") ||
+		strings.HasPrefix(line, "old mode ") ||
+		strings.HasPrefix(line, "new mode ") ||
+		strings.HasPrefix(line, "similarity index ") ||
+		strings.HasPrefix(line, "rename from ") ||
+		strings.HasPrefix(line, "rename to ") ||
+		strings.HasPrefix(line, "copy from ") ||
+		strings.HasPrefix(line, "copy to ") ||
+		strings.HasPrefix(line, "Binary files ")
+}
+
+// stripDiffMarkers removes diff headers from a patch to get clean code.
+// Implémentation basée sur une machine à états pour une robustesse maximale.
+// Règles :
+//   - En-têtes de diff (---, +++, diff, index) : supprimés
+//   - Métadonnées de hunk (@@ ... @@) : supprimées
+//   - Métadonnées étendues (new file mode, Binary files, etc.) : supprimées
+//   - Lignes de suppression (-) dans un hunk : supprimées
+//   - Lignes de contexte (espace) et d'addition (+) : conservées AVEC leur préfixe
+//   - Hors section diff : copié tel quel
+//   - Lignes vides dans un hunk : conservées
+//   - Lignes sans préfixe dans un hunk : fin du hunk, retour au texte
+func stripDiffMarkers(patch string) string {
+	lines := strings.Split(patch, "\n")
+	var result []string
+	state := StateTextHunk
+
+	for _, line := range lines {
+		switch state {
+		case StateTextHunk:
+			if diffHeaderPrefix(line) || isDiffMetaLine(line) {
+				state = StateDiffHeader
+				continue
+			}
+			// Début de hunk sans en-tête (ex: patch minimal)
+			if isHunkMeta(line) {
+				state = StateHunkMeta
+				continue
+			}
+			result = append(result, line)
+
+		case StateDiffHeader:
+			// @@ → début du hunk
+			if isHunkMeta(line) {
+				state = StateHunkMeta
+				continue
+			}
+			// Plus d'en-têtes ou de métadonnées
+			if diffHeaderPrefix(line) || isDiffMetaLine(line) {
+				continue
+			}
+			// Ligne normale qui n'est ni un en-tête ni un hunk → retour au texte
+			state = StateTextHunk
+			result = append(result, line)
+
+		case StateHunkMeta:
+			// Après @@, on entre dans le corps du hunk. On évalue la ligne
+			// suivante comme faisant partie de ce corps.
+			state = StateHunkBody
+			fallthrough
+
+		case StateHunkBody:
+			// Nouveau fichier dans le diff
+			if diffHeaderPrefix(line) || isDiffMetaLine(line) {
+				state = StateDiffHeader
+				continue
+			}
+			// Nouveau hunk dans le même fichier
+			if isHunkMeta(line) {
+				state = StateHunkMeta
+				continue
+			}
+			// Ligne de suppression
+			if strings.HasPrefix(line, "-") {
+				continue
+			}
+			// Ligne de contexte (préfixe espace) : conserver l'espace
+			if len(line) > 0 && line[0] == ' ' {
+				result = append(result, line)
+				continue
+			}
+			// Ligne d'addition (préfixe +) : conserver le +
+			if len(line) > 0 && line[0] == '+' {
+				result = append(result, line)
+				continue
+			}
+			// Lignes sans préfixe standard dans le corps : considéré
+			// comme une sortie du hunk (ex: "diff --combined" produit
+			// du contenu brut après le hunk).
+			if line == "" {
+				result = append(result, line)
+				continue
+			}
+			// Ligne sans préfixe reconnu → fin du hunk
+			state = StateTextHunk
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
 // isDiff checks if the patch looks like a diff.
 func isDiff(patch string) bool {
 	return strings.HasPrefix(patch, "---") ||
 		strings.HasPrefix(patch, "diff ") ||
-		strings.HasPrefix(patch, "+++")
-}
-
-// stripDiffMarkers removes diff headers from a patch to get clean code.
-// Keeps: context lines (starting with space), additions (starting with +),
-// and non-deletion lines outside diff sections. Removes diff headers and deletions.
-func stripDiffMarkers(patch string) string {
-	lines := strings.Split(patch, "\n")
-	var result []string
-	inDiff := false
-	for _, line := range lines {
-		// Skip diff header lines
-		if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") ||
-			strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "index ") ||
-			strings.HasPrefix(line, "@@") {
-			inDiff = true
-			continue
-		}
-		// Deletions are skipped when inside a diff section
-		if inDiff && strings.HasPrefix(line, "-") {
-			continue
-		}
-		// Append: not a deletion AND (outside diff OR context line OR addition)
-		if !strings.HasPrefix(line, "-") &&
-			(!inDiff || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "+")) {
-			result = append(result, line)
-		}
-	}
-	return strings.Join(result, "\n")
+		strings.HasPrefix(patch, "+++") ||
+		strings.Contains(patch, "\n--- ") ||
+		strings.Contains(patch, "\ndiff ") ||
+		strings.Contains(patch, "\n+++ ")
 }
 
 // dirForFile returns the directory containing a file.
