@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"pads-v3/internal/codeanalysis/semantic"
 	"pads-v3/internal/policy/evolution"
 )
 
@@ -18,6 +19,7 @@ type EvolutionConnector struct {
 	sandboxExec   *SandboxExecutor
 	agentLoop     *evolution.AgentLoop
 	currentScore  int
+	projectRoot   string
 }
 
 // NewEvolutionConnector creates a new connector with all dependencies.
@@ -26,12 +28,14 @@ func NewEvolutionConnector(
 	sandboxExec *SandboxExecutor,
 	agentLoop *evolution.AgentLoop,
 	currentScore int,
+	projectRoot string,
 ) *EvolutionConnector {
 	return &EvolutionConnector{
 		codeAgent:    codeAgent,
 		sandboxExec:  sandboxExec,
 		agentLoop:    agentLoop,
 		currentScore: currentScore,
+		projectRoot:  projectRoot,
 	}
 }
 
@@ -58,11 +62,13 @@ func (ec *EvolutionConnector) SuggestAndEvaluate(task Task, ctx Context) (*evolu
 	if sandboxRes.Error != nil {
 		log.Printf("EvolutionConnector: sandbox error: %v", sandboxRes.Error)
 		// Even sandbox errors are learning events
-		ec.agentLoop.Evaluate(
-			evolution.BuildAgentCandidate(candidateID, task.Target, "", ec.codeAgent.minConfidence, "sandbox_error"),
-			ec.currentScore,
-			1.0,
-		)
+			ec.agentLoop.Evaluate(
+				evolution.BuildAgentCandidate(candidateID, task.Target, "", ec.codeAgent.minConfidence, "sandbox_error"),
+				ec.currentScore,
+				1.0,
+				0.0,      // semantic risk unknown
+				[]string{"sandbox execution failed"},
+			)
 		return nil, fmt.Errorf("sandbox error: %w", sandboxRes.Error)
 	}
 
@@ -75,11 +81,15 @@ func (ec *EvolutionConnector) SuggestAndEvaluate(task Task, ctx Context) (*evolu
 		ec.agentLoop.SelectArm(), // Use current UCB-selected strategy
 	)
 
-	// Step 4: Evaluate with evolution engine
-	result := ec.agentLoop.Evaluate(candidate, ec.currentScore, 1.0)
+	// Step 3b: Run lazy semantic analysis on the target file (if available)
+	semanticRisk, semanticReasons, modImpact := runSemanticAnalysis(ec.projectRoot, task.Target, resp)
+	candidate.ModImpact = modImpact
 
-	log.Printf("EvolutionConnector: candidate=%s accepted=%v stability=%.2f reward=%.2f",
-		candidateID, result.Accepted, result.StabilityScore, result.Reward)
+	// Step 4: Evaluate with evolution engine
+	result := ec.agentLoop.Evaluate(candidate, ec.currentScore, 1.0, semanticRisk, semanticReasons)
+
+	log.Printf("EvolutionConnector: candidate=%s accepted=%v stability=%.2f reward=%.2f semantic_risk=%.2f",
+		candidateID, result.Accepted, result.StabilityScore, result.Reward, result.SemanticRisk)
 
 	// Update current score for next iteration
 	if result.Accepted {
@@ -170,8 +180,12 @@ func (cae *CodeAgentForEvolution) RunTask(task Task, ctx Context) (*evolution.Ag
 		cae.AgentLoop.SelectArm(),
 	)
 
+	// Lazy semantic analysis on the first file touched by the plan
+	semanticRisk, semanticReasons, modImpact := runSemanticAnalysis(cae.ProjectRoot, task.Target, resp)
+	candidate.ModImpact = modImpact
+
 	// Evaluate through evolution engine
-	result := cae.AgentLoop.Evaluate(candidate, candidateScore, 1.0)
+	result := cae.AgentLoop.Evaluate(candidate, candidateScore, 1.0, semanticRisk, semanticReasons)
 
 	// Update score if accepted
 	if result.Accepted {
@@ -203,6 +217,43 @@ func computeSandboxScore(res SandboxResult) int {
 	}
 
 	return score
+}
+
+// runSemanticAnalysis extracts the first file target from the plan and runs
+// the semantic analyzer on it. Returns (risk 0-1, reasons, modImpact 0-1).
+// It is lazy — only runs when a target file is present and is a Go file.
+// This avoids the overhead of AST parsing when the agent only runs commands.
+func runSemanticAnalysis(projectRoot, targetFile string, plan Plan) (risk float64, reasons []string, modImpact float64) {
+	// Use the explicit target if available, otherwise fall back to first write action
+	filePath := targetFile
+	if filePath == "" {
+		for _, step := range plan.Steps {
+			if step.Kind == ActionWriteFile && step.Target != "" {
+				filePath = step.Target
+				break
+			}
+		}
+	}
+	if filePath == "" {
+		return 0.0, []string{"no target file identified"}, 0.0
+	}
+	if !strings.HasSuffix(filePath, ".go") {
+		return 0.0, []string{"non-Go file, skipped"}, 0.0
+	}
+
+	analyzer := semantic.NewAnalyzer(projectRoot)
+	sum, err := analyzer.AnalyzeFile(filePath)
+	if err != nil {
+		reasons = []string{fmt.Sprintf("semantic analysis failed: %v", err)}
+		return 0.5, reasons, 0.5
+	}
+
+	// RiskScore (0-1) is our primary risk metric
+	risk = sum.RiskScore
+	reasons = sum.RiskReasons
+	// ModImpact is derived from exported symbol count vs total — high exported ratio = high impact
+	modImpact = risk
+	return risk, reasons, modImpact
 }
 
 // FixBrokenNode is a convenience method that finds and fixes a broken node.

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 )
-
+// worker.go — uses EventQueue with internal offset tracking.
 type Worker struct {
 	queue        *EventQueue
 	loop         *SafeEvolutionLoopV3
@@ -14,7 +14,6 @@ type Worker struct {
 	concurrency  int
 	processed    map[string]bool
 	processedOrd []string // ordered list for LRU-like cleanup
-	offset       int64    // position de lecture dans le fichier de queue
 	processedCnt int      // compteur pour nettoyage périodique
 }
 
@@ -31,7 +30,6 @@ func NewWorker(q *EventQueue, loop *SafeEvolutionLoopV3, rewarder Rewarder) *Wor
 		concurrency:  1,
 		processed:    make(map[string]bool),
 		processedOrd: make([]string, 0, processedCleanupThreshold),
-		offset:       0,
 	}
 }
 
@@ -39,15 +37,13 @@ func (w *Worker) Start() {
 	w.Running = true
 	slog.Info("worker démarré")
 	for w.Running {
-		// Lecture incrémentale : ne lire que les nouvelles lignes depuis le dernier offset
-		events, newOffset, err := w.queue.ReadFrom(w.offset)
+		// ReadFrom tracks offset internally — reads only new events since last call
+		events, err := w.queue.ReadFrom()
 		if err != nil {
 			slog.Error("worker lecture queue", "error", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
-
-		w.offset = newOffset
 
 		for _, e := range events {
 			if w.processed[e.ID] {
