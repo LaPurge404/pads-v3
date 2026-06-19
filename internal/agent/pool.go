@@ -46,6 +46,11 @@ func NewAgentPool(n int, projectRoot string, semMemGetter func() *memory.Semanti
 		n = 8 // hard cap to avoid resource exhaustion
 	}
 
+	// Nil semMemGetter is safe — returns nil (semantic analysis skipped).
+	if semMemGetter == nil {
+		semMemGetter = func() *memory.SemanticMemory { return nil }
+	}
+
 	// Use default strategies if not enough custom ones.
 	strategies := DefaultAgentStrategies
 	for len(strategies) < n {

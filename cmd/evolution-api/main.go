@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"pads-v3/internal/agent"
+	"pads-v3/internal/health"
 	"pads-v3/internal/policy/evolution"
 )
 
@@ -28,6 +30,7 @@ type Server struct {
 	authToken string
 	rl        *evolution.RateLimiter
 	selector  evolution.Selector
+	pool      *agent.AgentPool // optional multi-agent pool
 }
 
 // securityHeaders ajoute les headers de sécurité sur toutes les réponses.
@@ -234,8 +237,22 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	h := health.Check()
+
+	// Add AgentPool stats if pool is configured.
+	if s.pool != nil {
+		poolStats := &health.PoolStats{
+			Size: s.pool.Len(),
+		}
+		if best := s.pool.BestResult(); best != nil {
+			poolStats.BestArm = best.UCBArm
+		}
+		poolStats.ArmStats = s.pool.PoolStats()
+		h = health.CheckWithPool(poolStats)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h)
 }
 
 func (s *Server) handleSelect(w http.ResponseWriter, r *http.Request) {

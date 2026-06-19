@@ -1,14 +1,21 @@
 package health
 
-// Version is the health check package version.
-const Version = "1.0"
+import "pads-v3/internal/policy/evolution"
+
+// PoolStats holds AgentPool statistics for health reporting.
+type PoolStats struct {
+	Size     int                          `json:"pool_size"`
+	BestArm  string                       `json:"best_arm"`
+	ArmStats map[string]evolution.UCBArmStats `json:"arm_stats"`
+}
 
 // HealthChecker holds the health status of each system component.
 type HealthChecker struct {
-	DB             bool
-	WAL            bool
-	SemanticMemory bool
-	Worker         bool
+	DB             bool       `json:"db"`
+	WAL            bool       `json:"wal"`
+	SemanticMemory bool       `json:"semantic_memory"`
+	Worker         bool       `json:"worker"`
+	Pool           *PoolStats `json:"pool,omitempty"`
 }
 
 // Check returns the current health status of all components.
@@ -20,6 +27,13 @@ func Check() HealthChecker {
 		SemanticMemory: true,
 		Worker:         true,
 	}
+}
+
+// CheckWithPool returns a HealthChecker with optional AgentPool statistics.
+func CheckWithPool(poolStats *PoolStats) HealthChecker {
+	h := Check()
+	h.Pool = poolStats
+	return h
 }
 
 // String returns a human-readable summary of the health check status.

@@ -88,10 +88,21 @@ func TestHealth(t *testing.T) {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	buf := make([]byte, 2)
-	n, _ := resp.Body.Read(buf)
-	if n != 2 || string(buf) != "OK" {
-		t.Errorf("body = %q, want %q", string(buf), "OK")
+	// Verify response is valid JSON with health fields.
+	if resp.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", resp.Header.Get("Content-Type"), "application/json")
+	}
+
+	var h map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
+		t.Fatalf("decode health JSON: %v", err)
+	}
+
+	// Check required fields.
+	for _, field := range []string{"db", "wal", "semantic_memory", "worker"} {
+		if _, ok := h[field]; !ok {
+			t.Errorf("health response missing field %q", field)
+		}
 	}
 }
 
