@@ -19,18 +19,27 @@ type PoolStats struct {
 type AutonomousStatus struct {
 	Enabled   bool      `json:"enabled"`
 	Cycles    int64     `json:"cycles"`
-	Interval  string    `json:"interval"`            // e.g. "5m", "0" if disabled
-	LastCycle time.Time `json:"last_cycle_at,omitempty"` // zero value if never run
+	Interval  string    `json:"interval"`                     // e.g. "5m", "0" if disabled
+	LastCycle time.Time `json:"last_cycle_at,omitempty"`     // zero value if never run
+}
+
+// LLMCircuitStatus reports the circuit-breaker state per LLM provider.
+// Values are "closed", "open", or "half-open".
+type LLMCircuitStatus struct {
+	Nvidia  string `json:"nvidia"`  // NvidiaClient circuit state
+	OpenAI  string `json:"openai"`  // OpenAIClient circuit state
+	Claude  string `json:"claude"`  // ClaudeClient circuit state
 }
 
 // HealthChecker holds the health status of each system component.
 type HealthChecker struct {
-	DB             bool              `json:"db"`
+	DB             bool               `json:"db"`
 	WAL            bool              `json:"wal"`
 	SemanticMemory bool              `json:"semantic_memory"`
 	Worker         bool              `json:"worker"`
 	Pool           *PoolStats        `json:"pool,omitempty"`
 	Autonomous     *AutonomousStatus `json:"autonomous,omitempty"`
+	LLM            *LLMCircuitStatus `json:"llm,omitempty"`
 }
 
 // Paths contains the filesystem paths to verify in a health check.

@@ -53,6 +53,7 @@ type OpenAIClient struct {
 	Model   string
 	BaseURL string
 	Timeout time.Duration
+	cb      *CircuitBreaker
 }
 
 // NewOpenAIClient creates an OpenAI LLM client.
@@ -71,6 +72,7 @@ func NewOpenAIClient(model string) *OpenAIClient {
 		Model:   model,
 		BaseURL: baseURL,
 		Timeout: 60 * time.Second,
+		cb:      NewCircuitBreaker(5, 5*time.Minute),
 	}
 }
 
@@ -78,6 +80,10 @@ func NewOpenAIClient(model string) *OpenAIClient {
 func (c *OpenAIClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	if c.APIKey == "dummy-key-for-development" {
 		return c.mockResponse(prompt)
+	}
+
+	if err := c.cb.Allow(); err != nil {
+		return nil, err
 	}
 
 	systemPrompt := `You are PADS, an autonomous code improvement agent.
@@ -183,10 +189,12 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 			continue
 		}
 
+		c.cb.RecordSuccess()
 		return c.parseResponse(result.Choices[0].Message.Content, prompt)
 	}
 
 	slog.Error("OpenAI LLM exhausted retries", "attempts", maxRetries, "lastErr", lastErr)
+	c.cb.RecordFailure()
 	return nil, fmt.Errorf("LLM call failed after %d attempts: %w", maxRetries, lastErr)
 }
 
@@ -221,6 +229,7 @@ type ClaudeClient struct {
 	APIKey  string
 	Model   string
 	Timeout time.Duration
+	cb      *CircuitBreaker
 }
 
 // NewClaudeClient creates a Claude LLM client.
@@ -233,6 +242,7 @@ func NewClaudeClient(model string) *ClaudeClient {
 		APIKey:  apiKey,
 		Model:   model,
 		Timeout: 60 * time.Second,
+		cb:      NewCircuitBreaker(5, 5*time.Minute),
 	}
 }
 
@@ -243,6 +253,17 @@ func (c *ClaudeClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*Co
 		return c.mockResponse(prompt), nil
 	}
 
+	// Wrapping in cb.Call handles success/failure tracking automatically.
+	var result *CodeResponse
+	var err error
+	c.cb.Call(ctx, func() error {
+		result, err = c.generate(ctx, prompt)
+		return err
+	})
+	return result, err
+}
+
+func (c *ClaudeClient) generate(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	// Build request payload for Anthropic Messages API.
 	promptText := fmt.Sprintf("Task: %s\nFile: %s\nLanguage: %s\nContext: %s\nConstraints: %s\nGenerate code:", prompt.Task, prompt.FilePath, prompt.Language, prompt.Context, prompt.Constraints)
 	reqBody := map[string]any{
@@ -340,6 +361,7 @@ type NvidiaClient struct {
 	Model   string
 	BaseURL string
 	Timeout time.Duration // exported for test configuration
+	cb      *CircuitBreaker
 }
 
 // NewNvidiaClient creates a NVIDIA LLM client.
@@ -361,6 +383,7 @@ func NewNvidiaClient(model string) *NvidiaClient {
 		Model:   model,
 		BaseURL: baseURL,
 		Timeout: 120 * time.Second,
+		cb:      NewCircuitBreaker(5, 5*time.Minute),
 	}
 }
 
@@ -368,6 +391,10 @@ func NewNvidiaClient(model string) *NvidiaClient {
 func (c *NvidiaClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	if c.APIKey == "dummy-key-for-development" {
 		return c.mockResponse(prompt)
+	}
+
+	if err := c.cb.Allow(); err != nil {
+		return nil, err
 	}
 
 	systemPrompt := `You are PADS, an autonomous code improvement agent.
@@ -482,10 +509,12 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 			continue
 		}
 
+		c.cb.RecordSuccess()
 		return c.parseResponse(result.Choices[0].Message.Content, prompt)
 	}
 
 	slog.Error("NVIDIA LLM exhausted retries", "attempts", maxRetries, "lastErr", lastErr)
+	c.cb.RecordFailure()
 	return nil, fmt.Errorf("LLM call failed after %d attempts: %w", maxRetries, lastErr)
 }
 

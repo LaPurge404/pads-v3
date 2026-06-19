@@ -47,6 +47,11 @@ type Server struct {
 	autoStop     chan struct{}
 	autoTicker   *time.Ticker
 	lastCycle    time.Time
+
+	// LLM clients with circuit breakers (for health reporting)
+	nvidiaClient *agent.NvidiaClient
+	openaiClient *agent.OpenAIClient
+	claudeClient *agent.ClaudeClient
 }
 
 // securityHeaders adds security headers to all responses.
@@ -103,6 +108,11 @@ func main() {
 
 	agentLoop := evolution.NewAgentLoop(loop, selector, rewarder)
 
+	// LLM clients with circuit breakers (initialized early for health reporting).
+	nvidiaLLM := agent.NewNvidiaClient("")
+	openaiLLM := agent.NewOpenAIClient("")
+	claudeLLM := agent.NewClaudeClient("")
+
 	autoMode := autonomous.New()
 	// Enable from flag or environment variable.
 	if *autonomousFlag || os.Getenv("PADS_AUTONOMOUS") == "true" {
@@ -121,6 +131,9 @@ func main() {
 		projectRoot:    *projectRoot,
 		autoInterval:  *autonomousInterval,
 		autoStop:      make(chan struct{}),
+		nvidiaClient:  nvidiaLLM,
+		openaiClient:  openaiLLM,
+		claudeClient:  claudeLLM,
 	}
 
 	// Start autonomous periodic loop if interval is configured.
@@ -371,7 +384,7 @@ func (s *Server) handleAutonomousRun(w http.ResponseWriter, r *http.Request) {
 
 	// Lazy-initialize CodeAgent and SandboxExecutor per run.
 	// This avoids carrying state across independent cycles.
-	codeAgent := agent.NewCodeAgent(agent.NewDefaultLLMClient())
+	codeAgent := agent.NewCodeAgent(s.nvidiaClient)
 	sandboxExec := agent.NewSandboxExecutor(s.projectRoot, false)
 
 	task := agent.Task{
@@ -403,40 +416,40 @@ func (s *Server) runAutonomousLoop() {
 	for {
 		select {
 		case <-s.autoTicker.C:
-			codeAgent := agent.NewCodeAgent(agent.NewDefaultLLMClient())
+			codeAgent := agent.NewCodeAgent(s.nvidiaClient)
 			sandboxExec := agent.NewSandboxExecutor(s.projectRoot, false)
 
 			result := s.autonomousMode.RunCycle(
-				baseTask,
-				codeAgent,
-				sandboxExec,
-				s.agentLoop,
-				s.projectRoot,
-				0.0,
-				[]string{},
-			)
+							baseTask,
+							codeAgent,
+							sandboxExec,
+							s.agentLoop,
+							s.projectRoot,
+							0.0,
+							[]string{},
+						)
 
-			s.autoMu.Lock()
-			s.lastCycle = time.Now()
-			s.autoMu.Unlock()
+						s.autoMu.Lock()
+						s.lastCycle = time.Now()
+						s.autoMu.Unlock()
 
-			if result.Error != "" {
-				slog.Warn("autonomous cycle error", "error", result.Error)
-			} else {
-				slog.Info("autonomous cycle done",
-					"accepted", result.Accepted,
-					"score", result.Score,
-					"cycle", result.Cycle,
-				)
+						if result.Error != "" {
+							slog.Warn("autonomous cycle error", "error", result.Error)
+						} else {
+							slog.Info("autonomous cycle done",
+								"accepted", result.Accepted,
+								"score", result.Score,
+								"cycle", result.Cycle,
+							)
+						}
+
+					case <-s.autoStop:
+						s.autoTicker.Stop()
+						slog.Info("autonomous loop stopped")
+						return
+					}
+				}
 			}
-
-		case <-s.autoStop:
-			s.autoTicker.Stop()
-			slog.Info("autonomous loop stopped")
-			return
-		}
-	}
-}
 
 // handleAutonomousInterval changes the autonomous loop interval at runtime.
 // POST /autonomous/interval — body: {"interval": "5m"} or {"interval": "0"} to disable.
