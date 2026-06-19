@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"pads-v3/internal/agent"
@@ -19,12 +20,13 @@ import (
 )
 
 var (
-	tokenFile   = flag.String("token-file", "token.txt", "Fichier contenant le token d'authentification")
-	certFile    = flag.String("cert", "", "Certificat TLS")
-	keyFile     = flag.String("key", "", "Clé TLS")
-	timeout     = flag.Duration("timeout", 30*time.Second, "Timeout pour les handlers HTTP")
+	tokenFile       = flag.String("token-file", "token.txt", "Fichier contenant le token d'authentification")
+	certFile       = flag.String("cert", "", "Certificat TLS")
+	keyFile        = flag.String("key", "", "Clé TLS")
+	timeout        = flag.Duration("timeout", 30*time.Second, "Timeout pour les handlers HTTP")
 	autonomousFlag = flag.Bool("autonomous", false, "Activer le mode autonome (équivalent de PADS_AUTONOMOUS=true)")
-	projectRoot = flag.String("project-root", ".", "Racine du projet à améliorer")
+	autonomousInterval = flag.Duration("autonomous-interval", 0, "Intervalle entre les cycles autonomes (ex: 5m). 0 = désactivé.")
+	projectRoot    = flag.String("project-root", ".", "Racine du projet à améliorer")
 )
 
 type Server struct {
@@ -38,6 +40,13 @@ type Server struct {
 	agentLoop      *evolution.AgentLoop // evolution engine for autonomous mode
 	autonomousMode *autonomous.Mode    // autonomous closed-loop driver
 	projectRoot    string
+
+	// Autonomous loop driver state (protected by autoMu)
+	autoMu       sync.Mutex
+	autoInterval time.Duration // 0 = disabled
+	autoStop     chan struct{}
+	autoTicker   *time.Ticker
+	lastCycle    time.Time
 }
 
 // securityHeaders adds security headers to all responses.
@@ -110,6 +119,16 @@ func main() {
 		agentLoop:      agentLoop,
 		autonomousMode: autoMode,
 		projectRoot:    *projectRoot,
+		autoInterval:  *autonomousInterval,
+		autoStop:      make(chan struct{}),
+	}
+
+	// Start autonomous periodic loop if interval is configured.
+	if *autonomousInterval > 0 {
+		srv.autonomousMode.Enable()
+		srv.autoTicker = time.NewTicker(*autonomousInterval)
+		go srv.runAutonomousLoop()
+		slog.Info("autonomous loop started", "interval", *autonomousInterval)
 	}
 
 	// ── Router ─────────────────────────────────────────────────────────
@@ -140,6 +159,7 @@ func main() {
 	protected("/rotate", srv.handleRotate)
 	protected("/autonomous/toggle", srv.handleAutonomousToggle)
 	protected("/autonomous/run", srv.handleAutonomousRun)
+	protected("/autonomous/interval", srv.handleAutonomousInterval)
 
 	// ── Server avec timeout global ───────────────────────────────────────
 	addr := "127.0.0.1:8080"
@@ -285,9 +305,16 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 	// Add autonomous mode status.
 	if s.autonomousMode != nil {
+		s.autoMu.Lock()
+		interval := s.autoInterval
+		lastCycle := s.lastCycle
+		s.autoMu.Unlock()
+
 		autoStats := &health.AutonomousStatus{
-			Enabled: s.autonomousMode.IsEnabled(),
-			Cycles:  s.autonomousMode.CycleNum(),
+			Enabled:   s.autonomousMode.IsEnabled(),
+			Cycles:    s.autonomousMode.CycleNum(),
+			Interval:  interval.String(),
+			LastCycle: lastCycle,
 		}
 		h = health.CheckWithAutonomous(h, autoStats)
 	}
@@ -365,6 +392,109 @@ func (s *Server) handleAutonomousRun(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// runAutonomousLoop periodically calls RunCycle until stopped.
+func (s *Server) runAutonomousLoop() {
+	// Initial task — placeholder that the evolution engine can evaluate.
+	// In a full implementation this would come from a task queue.
+	baseTask := agent.Task{Kind: agent.TaskFixBroken, Target: "", Goal: "improve overall code quality and stability"}
+
+	for {
+		select {
+		case <-s.autoTicker.C:
+			codeAgent := agent.NewCodeAgent(agent.NewDefaultLLMClient())
+			sandboxExec := agent.NewSandboxExecutor(s.projectRoot, false)
+
+			result := s.autonomousMode.RunCycle(
+				baseTask,
+				codeAgent,
+				sandboxExec,
+				s.agentLoop,
+				s.projectRoot,
+				0.0,
+				[]string{},
+			)
+
+			s.autoMu.Lock()
+			s.lastCycle = time.Now()
+			s.autoMu.Unlock()
+
+			if result.Error != "" {
+				slog.Warn("autonomous cycle error", "error", result.Error)
+			} else {
+				slog.Info("autonomous cycle done",
+					"accepted", result.Accepted,
+					"score", result.Score,
+					"cycle", result.Cycle,
+				)
+			}
+
+		case <-s.autoStop:
+			s.autoTicker.Stop()
+			slog.Info("autonomous loop stopped")
+			return
+		}
+	}
+}
+
+// handleAutonomousInterval changes the autonomous loop interval at runtime.
+// POST /autonomous/interval — body: {"interval": "5m"} or {"interval": "0"} to disable.
+func (s *Server) handleAutonomousInterval(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Interval string `json:"interval"` // e.g. "5m", "0" to disable
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	d, err := time.ParseDuration(req.Interval)
+	if err != nil {
+		http.Error(w, "invalid interval format (use e.g. '5m' or '0'): "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.autoMu.Lock()
+	defer s.autoMu.Unlock()
+
+	// Stop existing loop.
+	if s.autoTicker != nil {
+		s.autoTicker.Stop()
+	}
+	if s.autoStop != nil {
+		close(s.autoStop)
+	}
+
+	s.autoInterval = d
+	s.autoStop = make(chan struct{})
+
+	if d > 0 {
+		s.autonomousMode.Enable()
+		s.autoTicker = time.NewTicker(d)
+		go s.runAutonomousLoop()
+		slog.Info("autonomous interval updated", "interval", d)
+	} else {
+		s.autoTicker = nil
+		slog.Info("autonomous loop disabled via interval endpoint")
+	}
+
+	s.autoMu.Lock()
+	last := s.lastCycle
+	s.autoMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"interval":          d.String(),
+		"enabled":          d > 0,
+		"last_cycle_at":    last,
+		"cycles_total":     s.autonomousMode.CycleNum(),
+	})
 }
 
 func generateID() string {

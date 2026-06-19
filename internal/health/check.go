@@ -3,6 +3,7 @@ package health
 import (
 	"database/sql"
 	"os"
+	"time"
 
 	"pads-v3/internal/policy/evolution"
 )
@@ -16,8 +17,10 @@ type PoolStats struct {
 
 // AutonomousStatus holds the state of the autonomous mode.
 type AutonomousStatus struct {
-	Enabled bool  `json:"enabled"`
-	Cycles  int64 `json:"cycles"`
+	Enabled   bool      `json:"enabled"`
+	Cycles    int64     `json:"cycles"`
+	Interval  string    `json:"interval"`            // e.g. "5m", "0" if disabled
+	LastCycle time.Time `json:"last_cycle_at,omitempty"` // zero value if never run
 }
 
 // HealthChecker holds the health status of each system component.
