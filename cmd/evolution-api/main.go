@@ -79,10 +79,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	selector := evolution.NewUCBSelector(time.Now().UnixNano())
+	selector := evolution.NewUCBSelector(time.Now().UnixNano(), "ucb_state.json")
 	selector.AddArm("stable")
 	selector.AddArm("bandit")
 	selector.AddArm("locked")
+	selector.EnableAutoSave(30 * time.Second)
 
 	rewarder := evolution.DeltaRewarder{}
 

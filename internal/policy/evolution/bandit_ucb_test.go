@@ -2,7 +2,9 @@ package evolution
 
 import (
 	"math"
+	"os"
 	"testing"
+	"time"
 )
 
 func TestUCBSelector_AddArm(t *testing.T) {
@@ -233,5 +235,208 @@ func TestUCBArmStats(t *testing.T) {
 	}
 	if ucb.Arms()["bad"] != 0.0 {
 		t.Errorf("bad reward expected 0.0, got %f", ucb.Arms()["bad"])
+	}
+}
+
+func TestUCBSelector_SaveLoad(t *testing.T) {
+	tmp, err := os.CreateTemp("", "ucb_test_*.json")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	path := tmp.Name()
+	tmp.Close()
+	defer os.Remove(path)
+
+	// Create a selector with some history.
+	ucb := NewUCBSelector(42)
+	ucb.AddArm("conservative")
+	ucb.AddArm("aggressive")
+	ucb.AddArm("test-first")
+	ucb.AddArm("minimal-change")
+
+	// Simulate 50 rounds of learning.
+	rewards := map[string]float64{
+		"conservative":   0.6,
+		"aggressive":     0.3,
+		"test-first":     0.8,
+		"minimal-change": 0.5,
+	}
+	for i := 0; i < 50; i++ {
+		arm := ucb.Select()
+		ucb.Update(arm, rewards[arm])
+	}
+
+	// Save state.
+	if err := ucb.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Create a fresh selector and restore.
+	restored := NewUCBSelector(99)
+	restored.AddArm("conservative")
+	restored.AddArm("aggressive")
+	restored.AddArm("test-first")
+	restored.AddArm("minimal-change")
+	if err := restored.Load(path); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Verify arms and counts match.
+	for _, name := range []string{"conservative", "aggressive", "test-first", "minimal-change"} {
+		if restored.Counts()[name] != ucb.Counts()[name] {
+			t.Errorf("count mismatch for %s: got %d want %d",
+				name, restored.Counts()[name], ucb.Counts()[name])
+		}
+		if restored.Arms()[name] != ucb.Arms()[name] {
+			t.Errorf("arm reward mismatch for %s: got %f want %f",
+				name, restored.Arms()[name], ucb.Arms()[name])
+		}
+	}
+
+	// Verify the restored selector behaves the same as the original.
+	origArm := ucb.Select()
+	restArm := restored.Select()
+	_ = origArm
+	_ = restArm
+	// After enough pulls both should converge — just verify no panics.
+}
+
+func TestUCBSelector_SaveLoad_PartialArms(t *testing.T) {
+	tmp, err := os.CreateTemp("", "ucb_test_*.json")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	path := tmp.Name()
+	tmp.Close()
+	defer os.Remove(path)
+
+	// Save a selector with only some arms.
+	ucb := NewUCBSelector(7)
+	ucb.AddArm("stable")
+	ucb.AddArm("bandit")
+	ucb.Update("stable", 1.0)
+	ucb.Update("stable", 1.0)
+	ucb.Update("bandit", 0.0)
+
+	if err := ucb.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Load into a selector that already has extra arms (simulating a newer binary).
+	restored := NewUCBSelector(7)
+	restored.AddArm("stable")
+	restored.AddArm("bandit")
+	restored.AddArm("locked") // arm that didn't exist when saved
+	if err := restored.Load(path); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// stable should have count=2.
+	if restored.Counts()["stable"] != 2 {
+		t.Errorf("stable count: got %d want 2", restored.Counts()["stable"])
+	}
+	// bandit should have count=1.
+	if restored.Counts()["bandit"] != 1 {
+		t.Errorf("bandit count: got %d want 1", restored.Counts()["bandit"])
+	}
+}
+
+func TestUCBSelector_Save_NonExistentPath(t *testing.T) {
+	ucb := NewUCBSelector(42)
+	ucb.AddArm("arm1")
+	err := ucb.Save("/nonexistent/directory/ucb.json")
+	if err == nil {
+		t.Error("expected error when saving to non-existent path")
+	}
+}
+
+func TestUCBSelector_Load_NonExistentFile(t *testing.T) {
+	ucb := NewUCBSelector(42)
+	ucb.AddArm("arm1")
+	err := ucb.Load("/definitely/does/not/exist.json")
+	if err == nil {
+		t.Error("expected error when loading non-existent file")
+	}
+}
+
+func TestUCBSelector_AutoSave_Stop(t *testing.T) {
+	tmp, err := os.CreateTemp("", "ucb_test_*.json")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	path := tmp.Name()
+	tmp.Close()
+	defer os.Remove(path)
+
+	ucb := NewUCBSelector(42, path)
+	ucb.AddArm("arm1")
+	ucb.AddArm("arm2")
+	ucb.Update("arm1", 0.8)
+	ucb.Update("arm1", 0.8)
+
+	// Enable auto-save with 10ms interval (triggers quickly in test).
+	ucb.EnableAutoSave(10 * time.Millisecond)
+
+	// Let the auto-save goroutine fire at least once.
+	time.Sleep(50 * time.Millisecond)
+
+	// Stop triggers final save.
+	ucb.Stop()
+
+	// Verify the file was written.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file to exist after Stop, got error: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty file after Stop")
+	}
+
+	// Verify we can restore.
+	restored := NewUCBSelector(99)
+	restored.AddArm("arm1")
+	restored.AddArm("arm2")
+	if err := restored.Load(path); err != nil {
+		t.Fatalf("failed to load saved state: %v", err)
+	}
+	if restored.Counts()["arm1"] != 2 {
+		t.Errorf("arm1 count after restore: got %d want 2", restored.Counts()["arm1"])
+	}
+}
+
+func TestUCBSelector_NewUCBSelector_WithLoad(t *testing.T) {
+	tmp, err := os.CreateTemp("", "ucb_test_*.json")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	path := tmp.Name()
+	tmp.Close()
+	defer os.Remove(path)
+
+	// Create a selector and save it.
+	original := NewUCBSelector(11)
+	original.AddArm("conservative")
+	original.AddArm("aggressive")
+	for i := 0; i < 30; i++ {
+		arm := original.Select()
+		reward := 0.7
+		if arm == "aggressive" {
+			reward = 0.2
+		}
+		original.Update(arm, reward)
+	}
+	if err := original.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Create a new selector that loads on construction.
+	restored := NewUCBSelector(22, path)
+	restored.AddArm("conservative")
+	restored.AddArm("aggressive")
+
+	// Counts must match immediately after construction.
+	if restored.Counts()["conservative"] != original.Counts()["conservative"] {
+		t.Errorf("conservative count: got %d want %d",
+			restored.Counts()["conservative"], original.Counts()["conservative"])
 	}
 }

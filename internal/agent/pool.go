@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -66,8 +67,10 @@ func NewAgentPool(n int, projectRoot string, semMemGetter func() *memory.Semanti
 		strategy := strategies[i]
 		codeAgent := NewCodeAgent(NewDefaultLLMClient())
 		sandboxExec := NewSandboxExecutor(projectRoot, true)
-		selector := evolution.NewUCBSelector(int64(i) + time.Now().UnixNano())
+		persistPath := fmt.Sprintf(".pads/ucb_%s.json", strategy)
+		selector := evolution.NewUCBSelector(int64(i)+time.Now().UnixNano(), persistPath)
 		selector.AddArm(strategy)
+		selector.EnableAutoSave(30 * time.Second)
 
 		agentLoop := evolution.NewAgentLoop(sharedLoop, selector, rewarder)
 		agents = append(agents, &PooledAgent{
