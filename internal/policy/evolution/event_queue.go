@@ -29,9 +29,9 @@ type QueueEvent struct {
 // modifié par Enqueue(). Cela garantit que les événements viennent d'être
 // écrits par Enqueue() sont immédiatement lisibles par ReadFrom().
 type EventQueue struct {
-	mu    sync.Mutex
-	file  *os.File
-	path  string
+	mu     sync.Mutex
+	file   *os.File
+	path   string
 	offset int64 // position de lecture suivante (en octets depuis le début du fichier)
 }
 

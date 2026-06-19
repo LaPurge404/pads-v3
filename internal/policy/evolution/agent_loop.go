@@ -30,7 +30,7 @@ type AgentCandidate struct {
 // AgentResult represents the outcome of evaluating an AgentCandidate.
 type AgentResult struct {
 	CandidateID    string
-	Score          int       // evolution score after evaluation
+	Score          int // evolution score after evaluation
 	Accepted       bool
 	CycleResult    CycleResult
 	StabilityScore float64
@@ -89,10 +89,10 @@ func (ac *AgentCandidate) ToQueueEvent(currentScore int, weight float64, mode Mo
 		Weight:    weight * ac.Confidence, // boost weight based on confidence
 		Mode:      mode,
 		Metadata: map[string]string{
-			"strategy":    ac.Strategy,
-			"confidence":  fmt.Sprintf("%.2f", ac.Confidence),
-			"target":      ac.TargetFile,
-			"mod_impact":  fmt.Sprintf("%.2f", ac.ModImpact),
+			"strategy":   ac.Strategy,
+			"confidence": fmt.Sprintf("%.2f", ac.Confidence),
+			"target":     ac.TargetFile,
+			"mod_impact": fmt.Sprintf("%.2f", ac.ModImpact),
 		},
 	}
 }

@@ -1,9 +1,9 @@
 package evolution_test
 
 import (
-    "testing"
+	"testing"
 
-    "pads-v3/internal/policy/evolution"
+	"pads-v3/internal/policy/evolution"
 )
 
 func TestWAL_Append(t *testing.T) {
@@ -32,43 +32,43 @@ func TestWAL_LastEntry(t *testing.T) {
 }
 
 func TestWALStore_PersistAndReplay(t *testing.T) {
-    tmp := t.TempDir() + "/wal.log"
-    store := evolution.NewWALStore(tmp)
+	tmp := t.TempDir() + "/wal.log"
+	store := evolution.NewWALStore(tmp)
 
-    entry := evolution.Entry{
-        CandidateScore: 42,
-        CurrentScore:   7,
-        Weight:         0.8,
-        Mode:           evolution.ModeStable,
-    }
-    err := store.Append(entry)
-    if err != nil {
-        t.Fatal(err)
-    }
+	entry := evolution.Entry{
+		CandidateScore: 42,
+		CurrentScore:   7,
+		Weight:         0.8,
+		Mode:           evolution.ModeStable,
+	}
+	err := store.Append(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-    entries, err := store.Replay()
-    if err != nil {
-        t.Fatal(err)
-    }
-    if len(entries) != 1 || entries[0].CandidateScore != 42 {
-        t.Fatalf("replay mismatch: %+v", entries)
-    }
+	entries, err := store.Replay()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].CandidateScore != 42 {
+		t.Fatalf("replay mismatch: %+v", entries)
+	}
 }
 
 func TestWALBridge_Append(t *testing.T) {
-    mem := evolution.NewWAL("")
-    disk := evolution.NewWALStore(t.TempDir() + "/bridge.log")
-    bridge := evolution.NewWALBridge(mem, disk)
+	mem := evolution.NewWAL("")
+	disk := evolution.NewWALStore(t.TempDir() + "/bridge.log")
+	bridge := evolution.NewWALBridge(mem, disk)
 
-    _, err := bridge.Append(100, 90, 1.0, evolution.ModeStable)
-    if err != nil {
-        t.Fatal(err)
-    }
-    if mem.LastEntry().CandidateScore != 100 {
-        t.Fatal("mem entry missing")
-    }
-    entries, _ := disk.Replay()
-    if len(entries) != 1 {
-        t.Fatal("disk entry missing")
-    }
+	_, err := bridge.Append(100, 90, 1.0, evolution.ModeStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mem.LastEntry().CandidateScore != 100 {
+		t.Fatal("mem entry missing")
+	}
+	entries, _ := disk.Replay()
+	if len(entries) != 1 {
+		t.Fatal("disk entry missing")
+	}
 }

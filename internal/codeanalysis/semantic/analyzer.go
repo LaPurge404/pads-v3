@@ -14,12 +14,12 @@ import (
 type ModificationType int
 
 const (
-	ModificationUnknown ModificationType = iota
-	ModificationSignature               // function signature changed (params, return values)
-	ModificationBody                    // function body altered
-	ModificationComment                 // only comments changed
-	ModificationImport                  // import list changed
-	ModificationExport                  // symbol export status changed (internal → exported or vice versa)
+	ModificationUnknown   ModificationType = iota
+	ModificationSignature                  // function signature changed (params, return values)
+	ModificationBody                       // function body altered
+	ModificationComment                    // only comments changed
+	ModificationImport                     // import list changed
+	ModificationExport                     // symbol export status changed (internal → exported or vice versa)
 )
 
 // SymbolKind describes what kind of symbol was modified.
@@ -36,32 +36,32 @@ const (
 
 // Symbol represents a code symbol with its metadata.
 type Symbol struct {
-	Name       string
-	Kind       SymbolKind
-	Exported   bool
-	Package    string
-	Position   string // file:line
-	ModType    ModificationType
-	Callers    []string // functions that call this symbol
-	Callees    []string // functions this symbol calls
-	Signature  string   // full signature for funcs/types
-	IsTest     bool     // _test.go file
+	Name      string
+	Kind      SymbolKind
+	Exported  bool
+	Package   string
+	Position  string // file:line
+	ModType   ModificationType
+	Callers   []string // functions that call this symbol
+	Callees   []string // functions this symbol calls
+	Signature string   // full signature for funcs/types
+	IsTest    bool     // _test.go file
 }
 
 // Summary holds the semantic analysis result for a file change.
 type Summary struct {
-	FilePath       string
-	ModifiedCount  int
-	ExportedCount  int
-	Symbols        []Symbol
-	RiskScore      float64   // 0.0 (safe) → 1.0 (high risk)
-	RiskReasons    []string  // human-readable explanations
-	ModTypeCounts  map[ModificationType]int
+	FilePath      string
+	ModifiedCount int
+	ExportedCount int
+	Symbols       []Symbol
+	RiskScore     float64  // 0.0 (safe) → 1.0 (high risk)
+	RiskReasons   []string // human-readable explanations
+	ModTypeCounts map[ModificationType]int
 }
 
 // Analyzer extracts semantic information from Go code changes.
 type Analyzer struct {
-	fset       *token.FileSet
+	fset        *token.FileSet
 	projectRoot string
 }
 

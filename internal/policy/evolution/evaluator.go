@@ -3,7 +3,7 @@ package evolution
 type MultiCycleEvaluator struct{}
 
 func NewMultiCycleEvaluator() *MultiCycleEvaluator {
-return &MultiCycleEvaluator{}
+	return &MultiCycleEvaluator{}
 }
 
 func (m *MultiCycleEvaluator) Evaluate(a Candidate, b Candidate, weight float64) CycleResult {

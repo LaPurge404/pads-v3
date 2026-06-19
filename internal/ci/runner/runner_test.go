@@ -1,29 +1,29 @@
 package runner
 
 import (
-    "testing"
+	"testing"
 
-    "pads-v3/internal/ci/gates"
-    "pads-v3/internal/ci/certification"
+	"pads-v3/internal/ci/certification"
+	"pads-v3/internal/ci/gates"
 )
 
 func Test_CIReport_Structure(t *testing.T) {
-    gr := &GateRunner{
-        Gates: []gates.Gate{},
-    }
+	gr := &GateRunner{
+		Gates: []gates.Gate{},
+	}
 
-    cert := &certification.Certificate{
-        RunID: "test",
-        Deterministic: true,
-    }
+	cert := &certification.Certificate{
+		RunID:         "test",
+		Deterministic: true,
+	}
 
-    report := gr.Run(gates.GateInput{}, cert, []string{})
+	report := gr.Run(gates.GateInput{}, cert, []string{})
 
-    if report.RunID == "" {
-        t.Fatal("missing run id")
-    }
+	if report.RunID == "" {
+		t.Fatal("missing run id")
+	}
 
-    if !report.Deterministic {
-        t.Fatal("expected deterministic")
-    }
+	if !report.Deterministic {
+		t.Fatal("expected deterministic")
+	}
 }

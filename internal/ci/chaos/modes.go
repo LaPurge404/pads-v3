@@ -4,7 +4,7 @@ package chaos
 type Mode int
 
 const (
-    ModeSilent Mode = iota // small delays, non-breaking
-    ModeHard               // injected failures
-    ModeFull               // corruption + crashes
+	ModeSilent Mode = iota // small delays, non-breaking
+	ModeHard               // injected failures
+	ModeFull               // corruption + crashes
 )

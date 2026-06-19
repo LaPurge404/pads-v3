@@ -63,141 +63,141 @@ func TestStripDiffMarkers(t *testing.T) {
 		{"simple text", "package main", "package main"},
 
 		// Diff complet standard
-				{
-					"full diff",
-					"diff --git a/foo.go b/foo.go\n" +
-						"index 123..456 789\n" +
-						"--- a/foo.go\n" +
-						"+++ b/foo.go\n" +
-						"@@ -1,3 +1,4 @@\n" +
-						" package main\n" +
-						"-import \"fmt\"\n" +
-						"+import \"fmt\"\n" +
-						"+import \"strings\"\n" +
-						" func main() {}",
-					" package main\n" +
-							"+import \"fmt\"\n" +
-							"+import \"strings\"\n" +
-							" func main() {}",
-				},
+		{
+			"full diff",
+			"diff --git a/foo.go b/foo.go\n" +
+				"index 123..456 789\n" +
+				"--- a/foo.go\n" +
+				"+++ b/foo.go\n" +
+				"@@ -1,3 +1,4 @@\n" +
+				" package main\n" +
+				"-import \"fmt\"\n" +
+				"+import \"fmt\"\n" +
+				"+import \"strings\"\n" +
+				" func main() {}",
+			" package main\n" +
+				"+import \"fmt\"\n" +
+				"+import \"strings\"\n" +
+				" func main() {}",
+		},
 
-				// Fichier vide (nouveau fichier)
-				{
-					"empty file diff",
-					"diff --git a/new.go b/new.go\n" +
-						"new file mode 100644\n" +
-						"--- /dev/null\n" +
-						"+++ b/new.go\n" +
-						"@@ -0,0 +1,2 @@\n" +
-						"+package new\n" +
-						"+func New() {}",
-					"+package new\n" +
-							"+func New() {}",
-				},
+		// Fichier vide (nouveau fichier)
+		{
+			"empty file diff",
+			"diff --git a/new.go b/new.go\n" +
+				"new file mode 100644\n" +
+				"--- /dev/null\n" +
+				"+++ b/new.go\n" +
+				"@@ -0,0 +1,2 @@\n" +
+				"+package new\n" +
+				"+func New() {}",
+			"+package new\n" +
+				"+func New() {}",
+		},
 
-				// Patch binaire (sans contenu utilisable)
-				{
-					"binary diff",
-					"diff --git a/logo.png b/logo.png\n" +
-						"Binary files a/logo.png and b/logo.png differ",
-					"",
-				},
+		// Patch binaire (sans contenu utilisable)
+		{
+			"binary diff",
+			"diff --git a/logo.png b/logo.png\n" +
+				"Binary files a/logo.png and b/logo.png differ",
+			"",
+		},
 
-				// Unicode dans le contenu
-				{
-					"unicode content",
-					"--- a/emoji.go\n" +
-						"+++ b/emoji.go\n" +
-						"@@ -1 +1 @@\n" +
-						"-const smiley = \"😀\"\n" +
-						"+const smiley = \"😀🎉👋\"\n",
-					"+const smiley = \"😀🎉👋\"\n",
-				},
+		// Unicode dans le contenu
+		{
+			"unicode content",
+			"--- a/emoji.go\n" +
+				"+++ b/emoji.go\n" +
+				"@@ -1 +1 @@\n" +
+				"-const smiley = \"😀\"\n" +
+				"+const smiley = \"😀🎉👋\"\n",
+			"+const smiley = \"😀🎉👋\"\n",
+		},
 
-				// Noms de fichiers avec + (ex: c++, go++ test_name)
-				{
-					"filename with plus",
-					"diff --git a/test++.go b/test++.go\n" +
-						"--- a/test++.go\n" +
-						"+++ b/test++.go\n" +
-						"@@ -1,2 +1,3 @@\n" +
-						" package main\n" +
-						"+// line with + sign\n" +
-						" func main() {}",
-					" package main\n" +
-							"+// line with + sign\n" +
-							" func main() {}",
-				},
+		// Noms de fichiers avec + (ex: c++, go++ test_name)
+		{
+			"filename with plus",
+			"diff --git a/test++.go b/test++.go\n" +
+				"--- a/test++.go\n" +
+				"+++ b/test++.go\n" +
+				"@@ -1,2 +1,3 @@\n" +
+				" package main\n" +
+				"+// line with + sign\n" +
+				" func main() {}",
+			" package main\n" +
+				"+// line with + sign\n" +
+				" func main() {}",
+		},
 
-				// Multiple hunks
-				{
-					"multiple hunks",
-					"--- a/main.go\n" +
-						"+++ b/main.go\n" +
-						"@@ -1,3 +1,4 @@\n" +
-						" package main\n" +
-						"+import \"fmt\"\n" +
-						" func main() {\n" +
-						"-	fmt.Println(\"old\")\n" +
-						"+	fmt.Println(\"new\")\n" +
-						" }\n" +
-						"@@ -10,3 +11,4 @@\n" +
-						" func helper() {}\n" +
-						"+// comment\n" +
-						"+",
-					" package main\n" +
-							"+import \"fmt\"\n" +
-							" func main() {\n" +
-							"+	fmt.Println(\"new\")\n" +
-							" }\n" +
-							" func helper() {}\n" +
-							"+// comment\n" +
-							"+",
-				},
+		// Multiple hunks
+		{
+			"multiple hunks",
+			"--- a/main.go\n" +
+				"+++ b/main.go\n" +
+				"@@ -1,3 +1,4 @@\n" +
+				" package main\n" +
+				"+import \"fmt\"\n" +
+				" func main() {\n" +
+				"-	fmt.Println(\"old\")\n" +
+				"+	fmt.Println(\"new\")\n" +
+				" }\n" +
+				"@@ -10,3 +11,4 @@\n" +
+				" func helper() {}\n" +
+				"+// comment\n" +
+				"+",
+			" package main\n" +
+				"+import \"fmt\"\n" +
+				" func main() {\n" +
+				"+	fmt.Println(\"new\")\n" +
+				" }\n" +
+				" func helper() {}\n" +
+				"+// comment\n" +
+				"+",
+		},
 
-				// Lignes vides dans le diff
-				{
-					"empty lines in diff",
-					"--- a/main.go\n" +
-						"+++ b/main.go\n" +
-						"@@ -1,2 +1,3 @@\n" +
-						" package main\n" +
-						"+\n" +
-						"+",
-					" package main\n" +
-							"+\n" +
-							"+",
-				},
+		// Lignes vides dans le diff
+		{
+			"empty lines in diff",
+			"--- a/main.go\n" +
+				"+++ b/main.go\n" +
+				"@@ -1,2 +1,3 @@\n" +
+				" package main\n" +
+				"+\n" +
+				"+",
+			" package main\n" +
+				"+\n" +
+				"+",
+		},
 
-				// Ancienne approche: suppression de lignes "-" (cas sans en-tête)
-				// Sans en-tête diff, le contenu n'est pas traité comme un diff,
-				// donc les lignes - et + sont passées telles quelles.
-				{
-					"old style deletion",
-					"- removed line\n+ added line\n unchanged",
-					"- removed line\n+ added line\n unchanged",
-				},
+		// Ancienne approche: suppression de lignes "-" (cas sans en-tête)
+		// Sans en-tête diff, le contenu n'est pas traité comme un diff,
+		// donc les lignes - et + sont passées telles quelles.
+		{
+			"old style deletion",
+			"- removed line\n+ added line\n unchanged",
+			"- removed line\n+ added line\n unchanged",
+		},
 
-				// Ligne d'ajout dans un diff (sans @@ → pas de hunk)
-				// Le "+ new line" après l'en-tête est vu comme ligne normale,
-				// donc on ressort en StateTextHunk et on copie.
-				{
-					"simple addition no hunk",
-					"--- a/foo.go\n" +
-						"+++ b/foo.go\n" +
-						"+ new line",
-					"+ new line",
-				},
+		// Ligne d'ajout dans un diff (sans @@ → pas de hunk)
+		// Le "+ new line" après l'en-tête est vu comme ligne normale,
+		// donc on ressort en StateTextHunk et on copie.
+		{
+			"simple addition no hunk",
+			"--- a/foo.go\n" +
+				"+++ b/foo.go\n" +
+				"+ new line",
+			"+ new line",
+		},
 
-				// Ligne d'ajout dans un diff avec @@
-				{
-					"simple addition with hunk",
-					"--- a/foo.go\n" +
-						"+++ b/foo.go\n" +
-						"@@ -0,0 +1 @@\n" +
-						"+ new line",
-					"+ new line",
-				},
+		// Ligne d'ajout dans un diff avec @@
+		{
+			"simple addition with hunk",
+			"--- a/foo.go\n" +
+				"+++ b/foo.go\n" +
+				"@@ -0,0 +1 @@\n" +
+				"+ new line",
+			"+ new line",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -275,7 +275,7 @@ func TestDirForFile(t *testing.T) {
 		want string
 	}{
 		{"internal/agent/llm.go", "internal/agent"},
-		{"server.go", "."},        // pas de / → "."
+		{"server.go", "."}, // pas de / → "."
 		{"a/b/c.go", "a/b"},
 		{"pkg/util.go", "pkg"},
 	}

@@ -16,11 +16,11 @@ type Executor struct {
 
 // ExecutionResult is the outcome of executing one Action.
 type ExecutionResult struct {
-	Action    Action
-	Output    string
-	ExitCode  int
-	Applied   bool
-	Error     string
+	Action     Action
+	Output     string
+	ExitCode   int
+	Applied    bool
+	Error      string
 	DurationMs int64
 }
 

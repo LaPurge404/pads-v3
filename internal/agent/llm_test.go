@@ -90,10 +90,10 @@ func TestNewDefaultLLMClient(t *testing.T) {
 func TestCodePromptFields(t *testing.T) {
 	client := NewOpenAIClient("gpt-4o-mini")
 	prompt := CodePrompt{
-		Task:       "Refactor error handling",
-		FilePath:   "api.go",
-		Language:   "go",
-		Context:    "// existing code",
+		Task:        "Refactor error handling",
+		FilePath:    "api.go",
+		Language:    "go",
+		Context:     "// existing code",
 		Constraints: "Must be idiomatic Go",
 	}
 	resp, err := client.GenerateCode(context.Background(), prompt)

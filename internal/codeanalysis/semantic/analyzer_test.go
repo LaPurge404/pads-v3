@@ -117,10 +117,10 @@ type NewType struct{}
 
 func TestRiskScore(t *testing.T) {
 	cases := []struct {
-		name           string
-		symbols        []Symbol
-		wantMinRisk    float64
-		wantMaxRisk    float64
+		name        string
+		symbols     []Symbol
+		wantMinRisk float64
+		wantMaxRisk float64
 	}{
 		{
 			name:        "no symbols",
@@ -222,8 +222,8 @@ func main() {
 
 func TestFormatModType(t *testing.T) {
 	tests := []struct {
-		mt    ModificationType
-		want  string
+		mt   ModificationType
+		want string
 	}{
 		{ModificationSignature, "signature"},
 		{ModificationBody, "body"},

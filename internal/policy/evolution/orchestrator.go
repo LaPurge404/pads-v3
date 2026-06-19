@@ -1,23 +1,23 @@
 package evolution
 
 type Orchestrator struct {
-    Evaluator *MultiCycleEvaluator
-    Gate      *StabilityGate
+	Evaluator *MultiCycleEvaluator
+	Gate      *StabilityGate
 }
 
 func NewOrchestrator(e *MultiCycleEvaluator, g *StabilityGate) *Orchestrator {
-    return &Orchestrator{
-        Evaluator: e,
-        Gate:      g,
-    }
+	return &Orchestrator{
+		Evaluator: e,
+		Gate:      g,
+	}
 }
 
 func (o *Orchestrator) Evaluate(a Candidate, b Candidate, weight float64) (CycleResult, bool) {
-    result := o.Evaluator.Evaluate(a, b, weight)
+	result := o.Evaluator.Evaluate(a, b, weight)
 
-    gateOk := o.Gate.Check(result.Score)
-    // Acceptation finale : l'évaluateur ET la porte de stabilité
-    finalOk := result.Accepted && gateOk
+	gateOk := o.Gate.Check(result.Score)
+	// Acceptation finale : l'évaluateur ET la porte de stabilité
+	finalOk := result.Accepted && gateOk
 
-    return result, finalOk
+	return result, finalOk
 }

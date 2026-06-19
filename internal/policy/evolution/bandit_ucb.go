@@ -1,42 +1,42 @@
 package evolution
 
 import (
-    "math"
-    "math/rand"
+	"math"
+	"math/rand"
 )
 
 // UCBSelector implements a bandit using the UCB1 algorithm.
 type UCBSelector struct {
-    arms      map[string]float64   // total reward per arm
-    counts    map[string]int       // number of pulls per arm
-    names     []string
-    rng       *rand.Rand
+	arms   map[string]float64 // total reward per arm
+	counts map[string]int     // number of pulls per arm
+	names  []string
+	rng    *rand.Rand
 }
 
 func NewUCBSelector(seed int64) *UCBSelector {
-    return &UCBSelector{
-        arms:   make(map[string]float64),
-        counts: make(map[string]int),
-        names:  make([]string, 0),
-        rng:    rand.New(rand.NewSource(seed)),
-    }
+	return &UCBSelector{
+		arms:   make(map[string]float64),
+		counts: make(map[string]int),
+		names:  make([]string, 0),
+		rng:    rand.New(rand.NewSource(seed)),
+	}
 }
 
 // AddArm introduces a new selectable arm.
 func (u *UCBSelector) AddArm(name string) {
-    if _, exists := u.arms[name]; !exists {
-        u.arms[name] = 0.0
-        u.counts[name] = 0
-        u.names = append(u.names, name)
-    }
+	if _, exists := u.arms[name]; !exists {
+		u.arms[name] = 0.0
+		u.counts[name] = 0
+		u.names = append(u.names, name)
+	}
 }
 
 // Update gives a reward to the arm that was selected.
 func (u *UCBSelector) Update(name string, reward float64) {
-    if _, ok := u.arms[name]; ok {
-        u.arms[name] += reward
-        u.counts[name]++
-    }
+	if _, ok := u.arms[name]; ok {
+		u.arms[name] += reward
+		u.counts[name]++
+	}
 }
 
 // Select picks the arm with the highest UCB value.

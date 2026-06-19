@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 )
+
 // worker.go — uses EventQueue with internal offset tracking.
 type Worker struct {
 	queue        *EventQueue

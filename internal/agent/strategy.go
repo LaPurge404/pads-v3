@@ -10,8 +10,8 @@ import (
 // AgentStrategy defines how the CodeAgent formulates prompts and approaches tasks.
 // UCB selects the best strategy based on historical rewards.
 type AgentStrategy struct {
-	Name        string  // "conservative", "aggressive", "test-first", "minimal-change"
-	Temperature float64 // LLM temperature (0-1)
+	Name         string  // "conservative", "aggressive", "test-first", "minimal-change"
+	Temperature  float64 // LLM temperature (0-1)
 	SystemPrompt string  // System prompt for this strategy
 	Description  string  // Human-readable description
 }
@@ -158,10 +158,10 @@ func BuildPromptForStrategy(task Task, ctx Context, strategy *AgentStrategy) Cod
 	}
 
 	return CodePrompt{
-		Task:       task.Goal,
-		FilePath:   task.Target,
-		Language:   detectLanguage(task.Target),
-		Context:    context.String(),
+		Task:        task.Goal,
+		FilePath:    task.Target,
+		Language:    detectLanguage(task.Target),
+		Context:     context.String(),
 		Constraints: constraints.String(),
 	}
 }
@@ -186,9 +186,9 @@ func StrategyForUCBArm(arm string) *AgentStrategy {
 
 // StrategyAdapter wraps a CodeAgent to use UCB-selected strategies.
 type StrategyAdapter struct {
-	Agent       *CodeAgent
-	Registry    *StrategyRegistry
-	Selector    StrategySelector
+	Agent    *CodeAgent
+	Registry *StrategyRegistry
+	Selector StrategySelector
 }
 
 // StrategySelector chooses which strategy to use based on UCB state.
@@ -200,9 +200,9 @@ type StrategySelector interface {
 // NewStrategyAdapter creates a CodeAgent adapter that uses UCB-selected strategies.
 func NewStrategyAdapter(selector StrategySelector) *StrategyAdapter {
 	return &StrategyAdapter{
-		Agent:       NewCodeAgentDefault(),
-		Registry:    DefaultStrategies(),
-		Selector:    selector,
+		Agent:    NewCodeAgentDefault(),
+		Registry: DefaultStrategies(),
+		Selector: selector,
 	}
 }
 

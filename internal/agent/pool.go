@@ -27,11 +27,11 @@ type PooledAgent struct {
 // AgentPool manages N parallel CodeAgents that compete via UCB.
 // Each agent has its own UCB arm so the pool learns which strategy works best.
 type AgentPool struct {
-	agents       []*PooledAgent
-	sharedLoop   *evolution.SafeEvolutionLoopV3
+	agents         []*PooledAgent
+	sharedLoop     *evolution.SafeEvolutionLoopV3
 	sharedRewarder evolution.Rewarder
-	semMemGetter func() *memory.SemanticMemory // lazily initialized shared memory
-	poolMu       sync.RWMutex
+	semMemGetter   func() *memory.SemanticMemory // lazily initialized shared memory
+	poolMu         sync.RWMutex
 }
 
 // NewAgentPool creates a pool of n agents, each with a distinct strategy.
@@ -75,10 +75,10 @@ func NewAgentPool(n int, projectRoot string, semMemGetter func() *memory.Semanti
 	}
 
 	return &AgentPool{
-		agents:       agents,
-		sharedLoop:   sharedLoop,
+		agents:         agents,
+		sharedLoop:     sharedLoop,
 		sharedRewarder: rewarder,
-		semMemGetter: semMemGetter,
+		semMemGetter:   semMemGetter,
 	}
 }
 

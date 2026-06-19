@@ -91,7 +91,7 @@ func (rl *RateLimiter) cleanup() {
 	if len(tokenData) > rl.maxTokens {
 		// Sort by oldest valid timestamp to evict least recently active tokens
 		type eviction struct {
-			token string
+			token  string
 			oldest time.Time
 		}
 		evictions := make([]eviction, 0, len(tokenData))

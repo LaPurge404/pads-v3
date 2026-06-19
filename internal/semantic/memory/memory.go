@@ -4,12 +4,13 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
-	_ "modernc.org/sqlite"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"pads-v3/internal/codeanalysis/semantic"
 )
@@ -229,64 +230,67 @@ func (m *SemanticMemory) IncrementallyIndex() error {
 		upsertFile := `INSERT OR REPLACE INTO file_index (file_path, file_hash, indexed_at) VALUES (?, ?, ?)`
 
 		// Two-pass indexing: insert ALL symbols first (so callees are always resolvable),
-				// then insert call edges. This guarantees callees are in symbol_index before
-				// resolveAndInsertCall queries for them.
-				for _, filePath := range goFiles {
-					hash, err := fileHash(filePath)
-					if err != nil {
-						continue
-					}
+		// then insert call edges. This guarantees callees are in symbol_index before
+		// resolveAndInsertCall queries for them.
+		for _, filePath := range goFiles {
+			hash, err := fileHash(filePath)
+			if err != nil {
+				continue
+			}
 
-					var storedHash string
-					if row := tx.QueryRow(`SELECT file_hash FROM file_index WHERE file_path = ?`, filePath); row.Scan(&storedHash) == nil && storedHash == hash {
-						continue // unchanged
-					}
+			var storedHash string
+			if row := tx.QueryRow(`SELECT file_hash FROM file_index WHERE file_path = ?`, filePath); row.Scan(&storedHash) == nil && storedHash == hash {
+				continue // unchanged
+			}
 
-					sum, err := m.analyzer.AnalyzeFile(filePath)
-					if err != nil {
-						continue
-					}
+			sum, err := m.analyzer.AnalyzeFile(filePath)
+			if err != nil {
+				continue
+			}
 
-					// Pass 1: collect all symbols and call edges in memory
-					type symData  struct{ rowID, name, kind, pkg, fp, line, sig string; exp, ist int }
-					type callData struct{ callerID, calleeName, callerPkg string }
+			// Pass 1: collect all symbols and call edges in memory
+			type symData struct {
+				rowID, name, kind, pkg, fp, line, sig string
+				exp, ist                              int
+			}
+			type callData struct{ callerID, calleeName, callerPkg string }
 
-					var syms  []symData
-					var calls []callData
+			var syms []symData
+			var calls []callData
 
-					for _, s := range sum.Symbols {
-						rid, name, kind, pkg, fp, line, sig, exp, ist := toSymbolRow(s, m.projectRoot)
-						syms = append(syms, symData{rid, name, kind, pkg, fp, line, sig, exp, ist})
-						symID := rowID(pkg, filePath, s.Name)
-						for _, calleeName := range s.Callees {
-							calls = append(calls, callData{symID, calleeName, pkg})
-						}
-					}
-
-					// Pass 2: upsert all symbols
-					for _, s := range syms {
-						if _, err := tx.Exec(upsertSym, s.rowID, s.name, s.kind, s.pkg, s.fp, s.line, s.exp, s.sig, s.ist); err != nil {
-							return fmt.Errorf("upsert symbol %s: %w", s.rowID, err)
-						}
-						// Delete old call edges for this symbol
-						if _, err := tx.Exec(`DELETE FROM call_index WHERE caller_id = ? OR callee_id = ?`, s.rowID, s.rowID); err != nil {
-							return fmt.Errorf("delete calls for %s: %w", s.rowID, err)
-						}
-					}
-
-					// Pass 3: insert call edges (all symbols are now in the DB)
-					for _, c := range calls {
-						resolveAndInsertCall(tx, c.callerID, c.callerPkg, filePath, c.calleeName)
-					}
-
-					// Update file index
-					if _, err := tx.Exec(upsertFile, filePath, hash, now); err != nil {
-						return fmt.Errorf("upsert file %s: %w", filePath, err)
-					}
+			for _, s := range sum.Symbols {
+				rid, name, kind, pkg, fp, line, sig, exp, ist := toSymbolRow(s, m.projectRoot)
+				syms = append(syms, symData{rid, name, kind, pkg, fp, line, sig, exp, ist})
+				symID := rowID(pkg, filePath, s.Name)
+				for _, calleeName := range s.Callees {
+					calls = append(calls, callData{symID, calleeName, pkg})
 				}
-				return nil
-			})
+			}
+
+			// Pass 2: upsert all symbols
+			for _, s := range syms {
+				if _, err := tx.Exec(upsertSym, s.rowID, s.name, s.kind, s.pkg, s.fp, s.line, s.exp, s.sig, s.ist); err != nil {
+					return fmt.Errorf("upsert symbol %s: %w", s.rowID, err)
+				}
+				// Delete old call edges for this symbol
+				if _, err := tx.Exec(`DELETE FROM call_index WHERE caller_id = ? OR callee_id = ?`, s.rowID, s.rowID); err != nil {
+					return fmt.Errorf("delete calls for %s: %w", s.rowID, err)
+				}
+			}
+
+			// Pass 3: insert call edges (all symbols are now in the DB)
+			for _, c := range calls {
+				resolveAndInsertCall(tx, c.callerID, c.callerPkg, filePath, c.calleeName)
+			}
+
+			// Update file index
+			if _, err := tx.Exec(upsertFile, filePath, hash, now); err != nil {
+				return fmt.Errorf("upsert file %s: %w", filePath, err)
+			}
 		}
+		return nil
+	})
+}
 
 // IndexFile indexes a single file and updates its entry in the file index.
 // Call this after a file is modified to update only the changed file.
@@ -312,10 +316,13 @@ func (m *SemanticMemory) IndexFile(filePath string) error {
 		upsertFile := `INSERT OR REPLACE INTO file_index (file_path, file_hash, indexed_at) VALUES (?, ?, ?)`
 
 		// Two-pass: collect all symbols first, then build call edges.
-		type symData  struct{ rowID, name, kind, pkg, fp, line, sig string; exp, ist int }
+		type symData struct {
+			rowID, name, kind, pkg, fp, line, sig string
+			exp, ist                              int
+		}
 		type callData struct{ callerID, calleeName, callerPkg string }
 
-		var syms  []symData
+		var syms []symData
 		var calls []callData
 
 		for _, s := range sum.Symbols {

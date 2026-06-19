@@ -6,14 +6,14 @@ import (
 )
 
 type SafeEvolutionLoopV3 struct {
-    orchestrator *Orchestrator
-    eventStore   *EventStore
-    detector     *AntiCollapseDetector
-    rollback     *RollbackManager
-    mode         Mode
-    sequence     int
-    selector     Selector
-    currentSeed  int64
+	orchestrator *Orchestrator
+	eventStore   *EventStore
+	detector     *AntiCollapseDetector
+	rollback     *RollbackManager
+	mode         Mode
+	sequence     int
+	selector     Selector
+	currentSeed  int64
 }
 
 func NewSafeEvolutionLoopV3(o *Orchestrator, es *EventStore, wal *WAL, detector *AntiCollapseDetector, mode Mode, selector Selector) *SafeEvolutionLoopV3 {
@@ -87,12 +87,12 @@ func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, wei
 
 // StabilityScore retourne la moyenne actuelle de la fenêtre du détecteur.
 func (l *SafeEvolutionLoopV3) StabilityScore() float64 {
-    if len(l.detector.window) == 0 {
-        return 0
-    }
-    sum := 0.0
-    for _, v := range l.detector.window {
-        sum += v
-    }
-    return sum / float64(len(l.detector.window))
+	if len(l.detector.window) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, v := range l.detector.window {
+		sum += v
+	}
+	return sum / float64(len(l.detector.window))
 }

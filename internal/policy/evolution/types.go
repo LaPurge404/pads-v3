@@ -1,7 +1,7 @@
 package evolution
 
 type Candidate struct {
-    Score int
+	Score int
 }
 
 type CycleResult struct {
@@ -14,7 +14,7 @@ type CycleResult struct {
 type Mode string
 
 const (
-    ModeBandit Mode = "bandit"
-    ModeStable Mode = "stable"
-    ModeLocked Mode = "locked"
+	ModeBandit Mode = "bandit"
+	ModeStable Mode = "stable"
+	ModeLocked Mode = "locked"
 )

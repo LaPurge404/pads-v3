@@ -111,12 +111,12 @@ func TestUCBSelector_UCB1_Formula(t *testing.T) {
 	// Total pulls = 15
 	// UCB1 for arm1: avg + sqrt(2*ln(15)/10)
 	arm1Avg := ucb.Arms()["arm1"] / float64(ucb.Counts()["arm1"])
-	arm1Exploration := math.Sqrt(2*math.Log(15) / 10)
+	arm1Exploration := math.Sqrt(2 * math.Log(15) / 10)
 	arm1UCB := arm1Avg + arm1Exploration
 
 	// UCB1 for arm2: avg + sqrt(2*ln(15)/5)
 	arm2Avg := ucb.Arms()["arm2"] / float64(ucb.Counts()["arm2"])
-	arm2Exploration := math.Sqrt(2*math.Log(15) / 5)
+	arm2Exploration := math.Sqrt(2 * math.Log(15) / 5)
 	arm2UCB := arm2Avg + arm2Exploration
 
 	// arm2 has higher avg and higher exploration term (fewer pulls)
