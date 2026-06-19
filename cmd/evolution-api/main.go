@@ -193,31 +193,8 @@ func (s *Server) enqueueEvolve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Body == nil {
-		http.Error(w, "Empty body", http.StatusBadRequest)
-		return
-	}
-	var req struct {
-		Candidate int     `json:"candidate"`
-		Current   int     `json:"current"`
-		Weight    float64 `json:"weight"`
-		Mode      string  `json:"mode"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if req.Candidate < 0 || req.Current < 0 {
-		http.Error(w, "Candidate and current scores must be non-negative", http.StatusBadRequest)
-		return
-	}
-	if req.Weight <= 0 {
-		http.Error(w, "Weight must be positive", http.StatusBadRequest)
-		return
-	}
-	validModes := map[string]bool{"stable": true, "bandit": true, "locked": true}
-	if !validModes[req.Mode] {
-		http.Error(w, "Invalid mode (allowed: stable, bandit, locked)", http.StatusBadRequest)
+	req, ok := parseAndValidateEvolve(r, w)
+	if !ok {
 		return
 	}
 

@@ -3,25 +3,25 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"unicode"
 )
 
 // CodeAgent is an Agent that uses an LLM to generate code modifications.
 type CodeAgent struct {
-	llm          LLMClient
-	executor     *Executor
-	maxRetries   int
+	llm           LLMClient
+	executor      *Executor
+	maxRetries    int
 	minConfidence float64
 }
 
 // NewCodeAgent creates a CodeAgent with the given LLM client.
 func NewCodeAgent(llm LLMClient) *CodeAgent {
 	return &CodeAgent{
-		llm:          llm,
-		executor:     &Executor{DryRun: false},
-		maxRetries:   3,
+		llm:           llm,
+		executor:      &Executor{DryRun: false},
+		maxRetries:    3,
 		minConfidence: 0.6,
 	}
 }
@@ -52,12 +52,11 @@ func (a *CodeAgent) Solve(task Task, ctx Context) (Plan, error) {
 		return Plan{}, fmt.Errorf("LLM error: %w", err)
 	}
 
-	log.Printf("CodeAgent: LLM confidence=%.2f, warnings=%v", resp.Confidence, resp.Warnings)
+	slog.Info("CodeAgent: LLM response", "confidence", resp.Confidence, "warnings", resp.Warnings)
 
 	// Filter based on confidence
 	if resp.Confidence < a.minConfidence {
-		log.Printf("CodeAgent: confidence %.2f below threshold %.2f, skipping",
-			resp.Confidence, a.minConfidence)
+		slog.Warn("CodeAgent: confidence below threshold, skipping", "confidence", resp.Confidence, "threshold", a.minConfidence)
 		return Plan{}, fmt.Errorf("low confidence: %.2f", resp.Confidence)
 	}
 
@@ -98,10 +97,10 @@ func (a *CodeAgent) buildPrompt(task Task, ctx Context) CodePrompt {
 	}
 
 	return CodePrompt{
-		Task:       task.Goal,
-		FilePath:   task.Target,
-		Language:   detectLanguage(task.Target),
-		Context:    context.String(),
+		Task:        task.Goal,
+		FilePath:    task.Target,
+		Language:    detectLanguage(task.Target),
+		Context:     context.String(),
 		Constraints: constraints.String(),
 	}
 }

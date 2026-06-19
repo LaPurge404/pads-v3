@@ -2,9 +2,11 @@ package agent
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +15,20 @@ import (
 	"pads-v3/internal/policy/evolution"
 	"pads-v3/internal/semantic/memory"
 )
+
+// semanticCacheEntry holds the cached analysis result for a file.
+type semanticCacheEntry struct {
+	hash      string
+	risk      float64
+	reasons   []string
+	modImpact float64
+}
+
+// semanticCache is a file-path → cache entry map, protected by a sync.Mutex.
+var semanticCache = struct {
+	mu   sync.Mutex
+	data map[string]semanticCacheEntry
+}{data: make(map[string]semanticCacheEntry)}
 
 // EvolutionConnector connects the CodeAgent to the evolution engine.
 // It transforms agent suggestions into evolution candidates and evaluates them.
@@ -54,7 +70,7 @@ func (ec *EvolutionConnector) getSemanticMemory() *memory.SemanticMemory {
 			ec.semMemErr = ec.semMemory.IncrementallyIndex()
 		}
 		if ec.semMemErr != nil {
-			log.Printf("[evolution_bridge] getSemanticMemory: failed to init memory: %v", ec.semMemErr)
+			slog.Warn("evolution_bridge: semantic memory init failed", "err", ec.semMemErr)
 			ec.semMemory = nil
 		}
 	})
@@ -76,21 +92,21 @@ func (ec *EvolutionConnector) SuggestAndEvaluate(task Task, ctx Context) (*evolu
 		return nil, fmt.Errorf("CodeAgent.Solve: %w", err)
 	}
 
-	log.Printf("EvolutionConnector: candidate=%s LLM confidence=%.2f", candidateID, ec.codeAgent.minConfidence)
+	slog.Info("EvolutionConnector: candidate generated", "candidate", candidateID, "confidence", ec.codeAgent.minConfidence)
 
 	// Step 2: Run in sandbox
 	sandboxRes := ec.sandboxExec.ExecuteWithSandbox(resp)
 
 	if sandboxRes.Error != nil {
-		log.Printf("EvolutionConnector: sandbox error: %v", sandboxRes.Error)
+		slog.Warn("EvolutionConnector: sandbox error", "err", sandboxRes.Error)
 		// Even sandbox errors are learning events
-			ec.agentLoop.Evaluate(
-				evolution.BuildAgentCandidate(candidateID, task.Target, "", ec.codeAgent.minConfidence, "sandbox_error"),
-				ec.currentScore,
-				1.0,
-				0.0,      // semantic risk unknown
-				[]string{"sandbox execution failed"},
-			)
+		ec.agentLoop.Evaluate(
+			evolution.BuildAgentCandidate(candidateID, task.Target, "", ec.codeAgent.minConfidence, "sandbox_error"),
+			ec.currentScore,
+			1.0,
+			0.0, // semantic risk unknown
+			[]string{"sandbox execution failed"},
+		)
 		return nil, fmt.Errorf("sandbox error: %w", sandboxRes.Error)
 	}
 
@@ -110,8 +126,7 @@ func (ec *EvolutionConnector) SuggestAndEvaluate(task Task, ctx Context) (*evolu
 	// Step 4: Evaluate with evolution engine
 	result := ec.agentLoop.Evaluate(candidate, ec.currentScore, 1.0, semanticRisk, semanticReasons)
 
-	log.Printf("EvolutionConnector: candidate=%s accepted=%v stability=%.2f reward=%.2f semantic_risk=%.2f",
-		candidateID, result.Accepted, result.StabilityScore, result.Reward, result.SemanticRisk)
+	slog.Info("EvolutionConnector: evaluation complete", "candidate", candidateID, "accepted", result.Accepted, "stability", result.StabilityScore, "reward", result.Reward, "semantic_risk", result.SemanticRisk)
 
 	// Update current score for next iteration
 	if result.Accepted {
@@ -182,7 +197,7 @@ func (cae *CodeAgentForEvolution) getSemanticMemory() *memory.SemanticMemory {
 			cae.semMemErr = cae.semMemory.IncrementallyIndex()
 		}
 		if cae.semMemErr != nil {
-			log.Printf("[CodeAgentForEvolution] getSemanticMemory: failed to init memory: %v", cae.semMemErr)
+			slog.Warn("CodeAgentForEvolution: semantic memory init failed", "err", cae.semMemErr)
 			cae.semMemory = nil
 		}
 	})
@@ -284,6 +299,25 @@ func runSemanticAnalysis(projectRoot, targetFile string, plan Plan, semMem *memo
 	}
 
 	analyzer := semantic.NewAnalyzer(projectRoot)
+
+	// Check file-hash cache before parsing.
+	{
+		semanticCache.mu.Lock()
+		entry, ok := semanticCache.data[filePath]
+		semanticCache.mu.Unlock()
+		if ok {
+			// Re-hash now to detect changes; compare before running full analysis.
+			data, readErr := os.ReadFile(filePath)
+			if readErr == nil {
+				h := sha256.Sum256(data)
+				hash := fmt.Sprintf("%x", h)
+				if hash == entry.hash {
+					return entry.risk, entry.reasons, entry.modImpact
+				}
+			}
+		}
+	}
+
 	sum, err := analyzer.AnalyzeFile(filePath)
 	if err != nil {
 		reasons = []string{fmt.Sprintf("semantic analysis failed: %v", err)}
@@ -338,6 +372,24 @@ func runSemanticAnalysis(projectRoot, targetFile string, plan Plan, semMem *memo
 	if modImpact == 0 {
 		modImpact = risk
 	}
+
+	// Store in cache for next call.
+	{
+		data, readErr := os.ReadFile(filePath)
+		if readErr == nil {
+			h := sha256.Sum256(data)
+			hash := fmt.Sprintf("%x", h)
+			semanticCache.mu.Lock()
+			semanticCache.data[filePath] = semanticCacheEntry{
+				hash:      hash,
+				risk:      risk,
+				reasons:   reasons,
+				modImpact: modImpact,
+			}
+			semanticCache.mu.Unlock()
+		}
+	}
+
 	return risk, reasons, modImpact
 }
 

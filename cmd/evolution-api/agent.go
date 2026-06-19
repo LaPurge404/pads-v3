@@ -32,30 +32,13 @@ func (s *Server) handleAgentEvolve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Body == nil {
-		http.Error(w, "Empty body", http.StatusBadRequest)
+	req, ok := parseAndValidateAgentEvolve(r, w)
+	if !ok {
 		return
 	}
-
-	var req struct {
-		TargetFile string  `json:"target_file"`
-		Patch      string  `json:"patch"`
-		Confidence float64 `json:"confidence"`
-		Mode       string  `json:"mode"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if req.TargetFile == "" || req.Patch == "" {
-		http.Error(w, "target_file and patch are required", http.StatusBadRequest)
-		return
-	}
-
-	validModes := map[string]bool{"stable": true, "bandit": true, "locked": true}
+	// Default to stable if mode not provided.
 	mode := evolution.ModeStable
-	if req.Mode != "" && validModes[req.Mode] {
+	if req.Mode != "" {
 		mode = evolution.Mode(req.Mode)
 	}
 
@@ -113,10 +96,14 @@ func (s *Server) handleAgentStatus(w http.ResponseWriter, r *http.Request) {
 		arms := ucb.Arms()
 		counts := ucb.Counts()
 		for _, name := range ucb.Names() {
+			avgReward := 0.0
+			if counts[name] > 0 {
+				avgReward = arms[name] / float64(counts[name])
+			}
 			armStats[name] = map[string]interface{}{
 				"total_reward": arms[name],
 				"pull_count":   counts[name],
-				"avg_reward":   arms[name] / float64(counts[name]),
+				"avg_reward":   avgReward,
 			}
 		}
 		stats["arms"] = armStats

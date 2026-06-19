@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -35,7 +35,7 @@ func NewEvolutionConnectorPool(n int, projectRoot string) *EvolutionConnectorPoo
 				ec.semMemErr = ec.semMem.IncrementallyIndex()
 			}
 			if ec.semMemErr != nil {
-				log.Printf("[EvolutionConnectorPool] semantic memory init failed: %v", ec.semMemErr)
+				slog.Warn("EvolutionConnectorPool: semantic memory init failed", "err", ec.semMemErr)
 				ec.semMem = nil
 			}
 		})
@@ -78,8 +78,7 @@ func (ec *EvolutionConnectorPool) SuggestAndEvaluate(task Task, ctx Context) (*e
 		}
 	}
 
-	log.Printf("[EvolutionConnectorPool] best result: arm=%s score=%d accepted=%v reasons=%d",
-		best.UCBArm, best.Score, best.Accepted, len(best.SemanticReasons))
+	slog.Info("EvolutionConnectorPool: best result", "arm", best.UCBArm, "score", best.Score, "accepted", best.Accepted, "reasons", len(best.SemanticReasons))
 
 	return best, nil
 }
