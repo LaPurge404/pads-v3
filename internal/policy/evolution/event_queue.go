@@ -151,3 +151,8 @@ func (q *EventQueue) Size() (int64, error) {
 	}
 	return stat.Size(), nil
 }
+
+// Path returns the WAL file path used by this queue.
+func (q *EventQueue) Path() string {
+	return q.path
+}

@@ -68,6 +68,11 @@ func (w *Worker) Start() {
 	}
 }
 
+// IsRunning reports whether the worker goroutine is active.
+func (w *Worker) IsRunning() bool {
+	return w.Running
+}
+
 // cleanupProcessed supprime les entrées anciennes de la map processed.
 // On garde les maxProcessedRetention dernières entrées pour maintenir la déduplication.
 // Les entrées plus anciennes sont supprimées (répétition possible en cas de crash restart,

@@ -257,7 +257,17 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	h := health.Check()
+	// Build real health checker with filesystem and worker verification.
+	paths := health.Paths{
+		WALPath: s.queue.Path(),
+		SemDB:   s.projectRoot + "/.pads/semantic/semantic_memory.db",
+	}
+	workerFn := func() bool { return false }
+	if s.worker != nil {
+		workerFn = s.worker.IsRunning
+	}
+	checker := health.NewChecker(paths, workerFn)
+	h := checker.Check()
 
 	// Add AgentPool stats if pool is configured.
 	if s.pool != nil {
