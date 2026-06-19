@@ -448,4 +448,114 @@ Reward = `newStability - oldStability` if accepted, else `0`.
 
 ---
 
+## 11. AgentPool — Multi-Agent UCB Competition
+
+**File:** `internal/agent/pool.go`
+
+`AgentPool` runs N parallel `CodeAgent` instances that compete via UCB. Each agent has its own strategy arm (default: `greedy`, `exploratory`, `conservative`). The pool selects the best result after running all agents.
+
+### Core Types
+
+```go
+// PooledAgent is a single agent in the pool, with its own CodeAgent, sandbox,
+// evolution loop, and UCB selector.
+type PooledAgent struct {
+    ID          string
+    Strategy    string // UCB arm name
+    CodeAgent   *CodeAgent
+    SandboxExec *SandboxExecutor
+    Loop        *evolution.AgentLoop
+    LastResult  *evolution.AgentResult
+    mu          sync.RWMutex
+}
+
+// AgentPool manages N parallel CodeAgents that compete via UCB.
+// Each agent has its own UCB arm so the pool learns which strategy works best.
+type AgentPool struct {
+    agents       []*PooledAgent
+    sharedLoop   *evolution.SafeEvolutionLoopV3
+    sharedRewarder evolution.Rewarder
+    semMemGetter func() *memory.SemanticMemory // lazily initialized shared memory
+    poolMu       sync.RWMutex
+}
+```
+
+### Constructor
+
+`NewAgentPool(n, projectRoot, semMemGetter)`:
+- Creates 1–8 agents (hard-capped at 8)
+- Each agent gets its own `CodeAgent` (with retry LLM), `SandboxExecutor`, and `AgentLoop`
+- All agents share the same `SafeEvolutionLoopV3` (shared WAL/state)
+- `semMemGetter` is called lazily on first use to get the shared `SemanticMemory`
+
+### Pipeline (per agent)
+
+1. `CodeAgent.Solve(task, ctx)` → generates a `Plan` via LLM (Nvidia, with retry)
+2. `SandboxExecutor.ExecuteWithSandbox(plan)` → validates in isolated copy
+3. `runSemanticAnalysis(...)` → checks semantic risk using `SemanticMemory`
+4. `AgentLoop.Evaluate(candidate, ...)` → runs through `SafeEvolutionLoopV3`, updates UCB
+
+### Pool Selection
+
+After `RunAll`, `BestResult()` returns the agent result with the highest score. On equal scores, prefers the result with fewer semantic reasons (simpler fix).
+
+### UCB Integration
+
+Each `PooledAgent` has its own `UCBSelector` arm. The shared `SafeEvolutionLoopV3` is used for evaluation, but per-agent UCB stats are tracked separately via `PoolStats()`.
+
+---
+
+## 12. SemanticMemory — Persistent SQLite Symbol Index
+
+**Files:** `internal/semantic/memory/memory.go`, `schema.go`, `queries.go`
+
+`SemanticMemory` is a SQLite-based persistent index of Go code symbols (functions, methods, types, variables, constants) and their call relationships. It enables semantic risk analysis for candidate patches.
+
+### Database Schema
+
+```sql
+-- symbol_index: one row per symbol (func/method/type/var/const)
+CREATE TABLE symbol_index (
+    symbol_id  TEXT PRIMARY KEY,  -- "pkg:file_path:name" deterministic
+    name       TEXT    NOT NULL,
+    kind       TEXT    NOT NULL,  -- func|method|type|var|const
+    package    TEXT    NOT NULL,  -- fully qualified package path
+    file_path  TEXT    NOT NULL,
+    line       INTEGER NOT NULL DEFAULT 0,
+    exported   INTEGER NOT NULL DEFAULT 0,
+    signature  TEXT    NOT NULL DEFAULT '',
+    is_test    INTEGER NOT NULL DEFAULT 0
+);
+
+-- call_index: caller → callee relationships
+CREATE TABLE call_index (
+    caller_id TEXT NOT NULL,
+    callee_id TEXT NOT NULL,
+    PRIMARY KEY (caller_id, callee_id)
+);
+
+-- file_index: tracks last indexed hash for incremental re-indexing
+CREATE TABLE file_index (
+    file_path TEXT PRIMARY KEY,
+    file_hash TEXT NOT NULL DEFAULT '',
+    indexed_at INTEGER NOT NULL DEFAULT 0
+);
+```
+
+### Key Design Decisions
+
+- `symbol_id` is deterministic (`pkg:file_path:name`) so incremental re-indexing produces stable IDs
+- `file_hash` (SHA-256) skips files that haven't changed since last index
+- WAL journal mode + `SYNCHRONOUS=FULL` for durability
+- Single connection (`SetMaxOpenConns(1)`) to avoid SQLite lock issues
+
+### Usage in AgentPool
+
+`runSemanticAnalysis(projectRoot, targetFile, plan, semMem)` in `pool.go` uses `SemanticMemory` to:
+- Check if the patch modifies symbols with high call graph fan-out (risk propagation)
+- Detect if the patch touches exported API surfaces
+- Assess semantic risk score (0.0–1.0) based on call graph analysis
+
+---
+
 *End of corrected DESIGN.md*
