@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"pads-v3/internal/metrics"
 )
 
 // ucbState is the JSON-serializable form of UCBSelector for persistence.
@@ -62,6 +64,7 @@ func (u *UCBSelector) AddArm(name string) {
 
 // Update gives a reward to the arm that was selected.
 func (u *UCBSelector) Update(name string, reward float64) {
+	metrics.UCBUpdates.Add(1)
 	u.mu.Lock()
 	if _, ok := u.arms[name]; ok {
 		u.arms[name] += reward

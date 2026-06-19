@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"pads-v3/internal/metrics"
 )
 
 // worker.go — uses EventQueue with internal offset tracking.
@@ -106,6 +108,7 @@ func (w *Worker) process(e QueueEvent) error {
 		e.Weight,
 	)
 	if err != nil {
+		metrics.WorkerErrors.Add(1)
 		return fmt.Errorf("worker evolve failed: %w", err)
 	}
 

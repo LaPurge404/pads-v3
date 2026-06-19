@@ -3,6 +3,8 @@ package evolution
 import (
 	"fmt"
 	"log/slog"
+
+	"pads-v3/internal/metrics"
 )
 
 type SafeEvolutionLoopV3 struct {
@@ -41,6 +43,7 @@ func NewSafeEvolutionLoopV3Minimal(mode Mode, selector Selector) *SafeEvolutionL
 }
 
 func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, weight float64) (bool, error) {
+	metrics.EvolutionCycles.Add(1)
 	result, accepted := l.orchestrator.Evaluate(candidate, current, weight)
 
 	if l.rollback.wal != nil {

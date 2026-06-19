@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"pads-v3/internal/metrics"
 )
 
 // Sandbox provides an isolated environment to test code changes
@@ -291,6 +293,7 @@ func NewSandboxExecutor(projectRoot string, autoCleanup bool) *SandboxExecutor {
 // ExecuteWithSandbox executes actions in a sandbox, tests, and returns result.
 // If tests pass, applies to real filesystem. If tests fail, rolls back.
 func (e *SandboxExecutor) ExecuteWithSandbox(plan Plan) SandboxResult {
+	metrics.SandboxRuns.Add(1)
 	// Create sandbox
 	sandbox, err := NewSandbox(e.projectRoot)
 	if err != nil {

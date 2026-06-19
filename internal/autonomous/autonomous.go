@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"pads-v3/internal/agent"
+	"pads-v3/internal/metrics"
 	"pads-v3/internal/policy/evolution"
 )
 
@@ -80,6 +81,7 @@ func (m *Mode) RunCycle(
 	semanticRisk float64,
 	semanticReasons []string,
 ) RunCycleResult {
+	metrics.AutonomousCycles.Add(1)
 	if !m.enabled {
 		return RunCycleResult{Error: "autonomous mode is disabled"}
 	}

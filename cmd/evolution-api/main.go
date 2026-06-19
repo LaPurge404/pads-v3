@@ -14,6 +14,7 @@ import (
 	"pads-v3/internal/agent"
 	"pads-v3/internal/autonomous"
 	"pads-v3/internal/health"
+	"pads-v3/internal/metrics"
 	"pads-v3/internal/policy/evolution"
 )
 
@@ -118,6 +119,7 @@ func main() {
 	mux.HandleFunc("/", srv.dashboard)
 	mux.HandleFunc("/health", srv.health)
 	mux.HandleFunc("/dashboard/enriched", srv.dashboardEnriched)
+	mux.HandleFunc("/metrics", metrics.PrometheusHandler())
 
 	// Protected endpoints: securityHeaders → auth → rate limit → logging → handler
 	protected := func(path string, h http.HandlerFunc) {
