@@ -97,12 +97,6 @@ func (ac *AgentCandidate) ToQueueEvent(currentScore int, weight float64, mode Mo
 	}
 }
 
-// computeScore converts agent metrics into an evolution-compatible score.
-// Score = confidence * 100 (normalized to 0-100)
-func (ac *AgentCandidate) computeScore() int {
-	return int(ac.Confidence * 100)
-}
-
 // AgentLoop integrates CodeAgent with the evolution engine.
 // It evaluates agent suggestions through the full evolution pipeline.
 type AgentLoop struct {

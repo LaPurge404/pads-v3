@@ -3,6 +3,7 @@ package evolution
 import (
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -100,13 +101,9 @@ func (rl *RateLimiter) cleanup() {
 		}
 
 		// Sort by oldest first (evict LRU)
-		for i := 0; i < len(evictions)-1; i++ {
-			for j := i + 1; j < len(evictions); j++ {
-				if evictions[j].oldest.Before(evictions[i].oldest) {
-					evictions[i], evictions[j] = evictions[j], evictions[i]
-				}
-			}
-		}
+		sort.Slice(evictions, func(i, j int) bool {
+			return evictions[i].oldest.Before(evictions[j].oldest)
+		})
 
 		// Evict oldest tokens until we're under limit
 		evictCount := len(tokenData) - rl.maxTokens

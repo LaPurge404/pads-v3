@@ -114,7 +114,7 @@ func (ec *EvolutionConnector) SuggestAndEvaluate(task Task, ctx Context) (*evolu
 	candidate := evolution.BuildAgentCandidate(
 		candidateID,
 		task.Target,
-		serializePlan(resp),
+		SerializePlan(resp),
 		ec.codeAgent.minConfidence,
 		ec.agentLoop.SelectArm(), // Use current UCB-selected strategy
 	)
@@ -155,15 +155,6 @@ func generateID() string {
 		b[1] = byte((time.Now().UnixNano() >> 8) & 0xff)
 	}
 	return hex.EncodeToString(b)
-}
-
-// serializePlan converts a Plan to a string representation.
-func serializePlan(plan Plan) string {
-	var parts []string
-	for i, step := range plan.Steps {
-		parts = append(parts, fmt.Sprintf("step%d: %s -> %s", i, step.Kind, step.Target))
-	}
-	return strings.Join(parts, "; ")
 }
 
 // CodeAgentForEvolution wraps a CodeAgent with evolution engine integration.
@@ -224,13 +215,13 @@ func (cae *CodeAgentForEvolution) RunTask(task Task, ctx Context) (*evolution.Ag
 	}
 
 	// Compute candidate score from sandbox results
-	candidateScore := computeSandboxScore(sandboxRes)
+	candidateScore := ComputeSandboxScore(sandboxRes)
 
 	// Create agent candidate
 	candidate := evolution.BuildAgentCandidate(
 		generateID(),
 		task.Target,
-		serializePlan(resp),
+		SerializePlan(resp),
 		cae.CodeAgent.minConfidence,
 		cae.AgentLoop.SelectArm(),
 	)
@@ -248,30 +239,6 @@ func (cae *CodeAgentForEvolution) RunTask(task Task, ctx Context) (*evolution.Ag
 	}
 
 	return &result, nil
-}
-
-// computeSandboxScore converts sandbox results into an evolution score.
-func computeSandboxScore(res SandboxResult) int {
-	score := 0
-
-	if res.Error == nil && !strings.Contains(res.BuildOutput, "error") {
-		score += 30 // Build success
-	}
-
-	if res.Passed {
-		score += 50 // All tests passing
-	} else if res.TestsPassed > 0 {
-		total := res.TestsPassed + res.TestsFailed
-		if total > 0 {
-			score += 50 * res.TestsPassed / total
-		}
-	}
-
-	if !strings.Contains(res.BuildOutput, "warning") && !strings.Contains(res.TestOutput, "warning") {
-		score += 20
-	}
-
-	return score
 }
 
 // runSemanticAnalysis extracts the first file target from the plan and runs

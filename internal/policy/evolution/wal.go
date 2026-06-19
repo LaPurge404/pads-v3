@@ -62,6 +62,8 @@ func (w *WAL) loadFromDisk() {
 		var entry Entry
 		if err := json.Unmarshal(line, &entry); err == nil {
 			w.entries = append(w.entries, entry)
+		} else {
+			slog.Warn("wal: skipped corrupted JSON line", "line", string(line), "error", err)
 		}
 	}
 }

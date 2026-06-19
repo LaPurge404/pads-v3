@@ -20,7 +20,6 @@ type EvolutionConnectorPool struct {
 	semMem      *memory.SemanticMemory
 	semMemOnce  sync.Once
 	semMemErr   error
-	mu          sync.RWMutex
 }
 
 // NewEvolutionConnectorPool creates a multi-agent connector with n parallel agents.

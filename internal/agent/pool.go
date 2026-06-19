@@ -144,7 +144,7 @@ func (ap *AgentPool) RunAll(ctx context.Context, task Task, ctxContext Context) 
 				// Even failures are learning events.
 				r.err = sandboxRes.Error
 				evResult := agent.Loop.Evaluate(
-					evolution.BuildAgentCandidate(agent.Strategy+"_"+task.Target, task.Target, serializePlan(plan), 0, agent.Strategy),
+					evolution.BuildAgentCandidate(agent.Strategy+"_"+task.Target, task.Target, SerializePlan(plan), 0, agent.Strategy),
 					50, // default starting score
 					1.0,
 					0.5, // semantic risk unknown
@@ -164,7 +164,7 @@ func (ap *AgentPool) RunAll(ctx context.Context, task Task, ctxContext Context) 
 			candidate := evolution.BuildAgentCandidate(
 				agent.Strategy+"_"+task.Target,
 				task.Target,
-				serializePlan(plan),
+				SerializePlan(plan),
 				agent.CodeAgent.MinConfidence(),
 				agent.Strategy,
 			)

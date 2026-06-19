@@ -142,7 +142,7 @@ func TestComputeSandboxScore(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			score := computeSandboxScore(tc.res)
+			score := agent.ComputeSandboxScore(tc.res)
 			if score < tc.minScore {
 				t.Errorf("score %d < min %d", score, tc.minScore)
 			}

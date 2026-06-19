@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -111,13 +112,13 @@ func (m *Mode) RunCycle(
 	}
 
 	// Step 3: Compute candidate score from sandbox results
-	candidateScore := computeSandboxScore(sandboxRes)
+	candidateScore := agent.ComputeSandboxScore(sandboxRes)
 
 	// Step 4: Build candidate and evaluate
 	candidate := evolution.BuildAgentCandidate(
 		candidateID,
 		task.Target,
-		serializePlan(resp),
+		agent.SerializePlan(resp),
 		codeAgent.MinConfidence(),
 		agentLoop.SelectArm(),
 	)
@@ -173,6 +174,14 @@ func (m *Mode) applyAndCommit(plan agent.Plan, projectRoot string) (committed bo
 		return false, "", errors.New("no files to commit")
 	}
 
+	// Verify files exist in the real project before attempting to stage them.
+	// This enforces that ExecuteWithSandbox has correctly copied changes to the real workspace.
+	for _, f := range filesToAdd {
+		if _, statErr := os.Stat(f); statErr != nil {
+			return false, "", fmt.Errorf("file not found in real project (sandbox copy may have failed): %s: %w", f, statErr)
+		}
+	}
+
 	// Stage files.
 	for _, f := range filesToAdd {
 		if err := gitAdd(projectRoot, f); err != nil {
@@ -224,35 +233,6 @@ func gitCommit(repoRoot, msg string) (string, error) {
 		return "", nil
 	}
 	return strings.TrimSpace(string(hashOut)), nil
-}
-
-// computeSandboxScore converts sandbox results into an evolution score.
-func computeSandboxScore(res agent.SandboxResult) int {
-	score := 0
-	if res.Error == nil && !strings.Contains(res.BuildOutput, "error") {
-		score += 30
-	}
-	if res.Passed {
-		score += 50
-	} else if res.TestsPassed > 0 {
-		total := res.TestsPassed + res.TestsFailed
-		if total > 0 {
-			score += 50 * res.TestsPassed / total
-		}
-	}
-	if !strings.Contains(res.BuildOutput, "warning") && !strings.Contains(res.TestOutput, "warning") {
-		score += 20
-	}
-	return score
-}
-
-// serializePlan converts a Plan to a string representation.
-func serializePlan(plan agent.Plan) string {
-	var parts []string
-	for i, step := range plan.Steps {
-		parts = append(parts, fmt.Sprintf("step%d: %s -> %s", i, step.Kind, step.Target))
-	}
-	return strings.Join(parts, "; ")
 }
 
 // describePlan returns a short one-line description of a plan.
