@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.26'
 
 jobs:
   # ─────────────────────────────────────────────────────
@@ -33,11 +33,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Download Go modules
+        run: go mod download
+
       - name: Build
         run: go build ./...
 
       - name: Test
-        run: go test ./... -count=1 -race
+        run: go test ./... -count=1 -race -coverprofile=coverage.out
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -111,7 +114,8 @@ jobs:
         run: |
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST http://127.0.0.1:8080/rotate \
-            -H "Authorization: Bearer $PADS_TOKEN")
+            -H "Authorization: Bearer $PADS_TOKEN" \
+          )
           if [ "$RESPONSE" -ne 200 ]; then
             echo "/rotate returned status $RESPONSE"
             exit 1
