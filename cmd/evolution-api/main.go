@@ -12,25 +12,31 @@ import (
 	"time"
 
 	"pads-v3/internal/agent"
+	"pads-v3/internal/autonomous"
 	"pads-v3/internal/health"
 	"pads-v3/internal/policy/evolution"
 )
 
 var (
-	tokenFile = flag.String("token-file", "token.txt", "Fichier contenant le token d'authentification")
-	certFile  = flag.String("cert", "", "Certificat TLS")
-	keyFile   = flag.String("key", "", "Clé TLS")
-	timeout   = flag.Duration("timeout", 30*time.Second, "Timeout pour les handlers HTTP")
+	tokenFile   = flag.String("token-file", "token.txt", "Fichier contenant le token d'authentification")
+	certFile    = flag.String("cert", "", "Certificat TLS")
+	keyFile     = flag.String("key", "", "Clé TLS")
+	timeout     = flag.Duration("timeout", 30*time.Second, "Timeout pour les handlers HTTP")
+	autonomousFlag = flag.Bool("autonomous", false, "Activer le mode autonome (équivalent de PADS_AUTONOMOUS=true)")
+	projectRoot = flag.String("project-root", ".", "Racine du projet à améliorer")
 )
 
 type Server struct {
-	tokenFile string
-	queue     *evolution.EventQueue
-	worker    *evolution.Worker
-	authToken string
-	rl        *evolution.RateLimiter
-	selector  evolution.Selector
-	pool      *agent.AgentPool // optional multi-agent pool
+	tokenFile      string
+	queue          *evolution.EventQueue
+	worker         *evolution.Worker
+	authToken      string
+	rl             *evolution.RateLimiter
+	selector       evolution.Selector
+	pool           *agent.AgentPool    // optional multi-agent pool
+	agentLoop      *evolution.AgentLoop // evolution engine for autonomous mode
+	autonomousMode *autonomous.Mode    // autonomous closed-loop driver
+	projectRoot    string
 }
 
 // securityHeaders ajoute les headers de sécurité sur toutes les réponses.
@@ -84,13 +90,24 @@ func main() {
 	worker := evolution.NewWorker(queue, loop, rewarder)
 	go worker.Start()
 
+	agentLoop := evolution.NewAgentLoop(loop, selector, rewarder)
+
+	autoMode := autonomous.New()
+	// Enable from flag or environment variable.
+	if *autonomousFlag || os.Getenv("PADS_AUTONOMOUS") == "true" {
+		autoMode.Enable()
+	}
+
 	srv := &Server{
-		tokenFile: *tokenFile,
-		queue:     queue,
-		worker:    worker,
-		authToken: authToken,
-		rl:        evolution.NewRateLimiter(10, 1*time.Minute),
-		selector:  selector,
+		tokenFile:      *tokenFile,
+		queue:          queue,
+		worker:         worker,
+		authToken:      authToken,
+		rl:             evolution.NewRateLimiter(10, 1*time.Minute),
+		selector:       selector,
+		agentLoop:      agentLoop,
+		autonomousMode: autoMode,
+		projectRoot:    *projectRoot,
 	}
 
 	// ── Router ─────────────────────────────────────────────────────────
@@ -118,6 +135,8 @@ func main() {
 	protected("/agent/status", srv.handleAgentStatus)
 	protected("/agent/strategies", srv.handleAgentStrategies)
 	protected("/rotate", srv.handleRotate)
+	protected("/autonomous/toggle", srv.handleAutonomousToggle)
+	protected("/autonomous/run", srv.handleAutonomousRun)
 
 	// ── Server avec timeout global ───────────────────────────────────────
 	addr := "127.0.0.1:8080"
@@ -248,7 +267,15 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 			poolStats.BestArm = best.UCBArm
 		}
 		poolStats.ArmStats = s.pool.PoolStats()
-		h = health.CheckWithPool(poolStats)
+		h.Pool = poolStats
+	}
+
+	// Add autonomous mode status.
+	if s.autonomousMode != nil {
+		h.Autonomous = &health.AutonomousStatus{
+			Enabled: s.autonomousMode.IsEnabled(),
+			Cycles:  s.autonomousMode.CycleNum(),
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -262,6 +289,68 @@ func (s *Server) handleSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	arm := s.selector.Select()
 	json.NewEncoder(w).Encode(map[string]string{"arm": arm})
+}
+
+// handleAutonomousToggle flips the autonomous mode state.
+// POST /autonomous/toggle — returns new state.
+func (s *Server) handleAutonomousToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	enabled := s.autonomousMode.Toggle()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"enabled":        enabled,
+		"cycles_total":   s.autonomousMode.CycleNum(),
+		"note":           "autonomous mode is now "+map[bool]string{true: "ENABLED", false: "DISABLED"}[enabled],
+	})
+}
+
+// handleAutonomousRun executes one autonomous improvement cycle.
+// POST /autonomous/run — body: {"target": "path/to/file.go", "goal": "fix description"}
+func (s *Server) handleAutonomousRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Target string `json:"target"`
+		Goal   string `json:"goal"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Target == "" || req.Goal == "" {
+		http.Error(w, "both 'target' and 'goal' are required", http.StatusBadRequest)
+		return
+	}
+
+	// Lazy-initialize CodeAgent and SandboxExecutor per run.
+	// This avoids carrying state across independent cycles.
+	codeAgent := agent.NewCodeAgent(agent.NewDefaultLLMClient())
+	sandboxExec := agent.NewSandboxExecutor(s.projectRoot, false)
+
+	task := agent.Task{
+		Kind:   agent.TaskFixBroken,
+		Target: req.Target,
+		Goal:   req.Goal,
+	}
+
+	result := s.autonomousMode.RunCycle(
+		task,
+		codeAgent,
+		sandboxExec,
+		s.agentLoop,
+		s.projectRoot,
+		0.0,       // semanticRisk: 0 (no analysis in this call)
+		[]string{}, // semanticReasons
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 func generateID() string {

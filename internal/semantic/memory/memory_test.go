@@ -3,6 +3,7 @@ package memory
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -307,4 +308,114 @@ const PublicConst = 1
 		}
 	}
 	t.Logf("Public API surface for surfacepkg: %d symbols", len(syms))
+}
+
+func TestQueryContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	pkgDir := filepath.Join(projectDir, "ctxpkg")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// file1: defines Pub() called by main
+	file1 := filepath.Join(pkgDir, "api.go")
+	if err := os.WriteFile(file1, []byte(`package ctxpkg
+
+// Pub is the public API used by consumers.
+func Pub() int {
+	return priv()
+}
+
+func priv() int {
+	return 1
+}
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// file2: client calls Pub()
+	file2 := filepath.Join(projectDir, "client", "use.go")
+	if err := os.MkdirAll(filepath.Dir(file2), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file2, []byte(`package client
+
+import "ctxpkg"
+
+func Use() int {
+	return ctxpkg.Pub() + 1
+}
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mem, err := New(projectDir, tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mem.Close()
+
+	if err := mem.IncrementallyIndex(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := mem.QueryContext(file1)
+	if ctx == "" {
+		t.Fatal("QueryContext returned empty string for a file with symbols")
+	}
+	if !strings.Contains(ctx, "Semantic Context") {
+		t.Error("context should contain 'Semantic Context' header")
+	}
+	if !strings.Contains(ctx, "Pub") {
+		t.Error("context should mention exported symbol 'Pub'")
+	}
+	t.Logf("QueryContext result:\n%s", ctx)
+}
+
+func TestIncrementalIndexSkipsUnchanged(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	pkgDir := filepath.Join(projectDir, "skip")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	file := filepath.Join(pkgDir, "stable.go")
+	if err := os.WriteFile(file, []byte(`package skip
+func Stable() int { return 42 }
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mem, err := New(projectDir, tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mem.Close()
+
+	if err := mem.IncrementallyIndex(); err != nil {
+		t.Fatal(err)
+	}
+	n1, err := mem.SymbolCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n1 < 1 {
+		t.Fatalf("expected at least 1 symbol after first index, got %d", n1)
+	}
+
+	// Second run with no changes — should be fast and produce same count.
+	if err := mem.IncrementallyIndex(); err != nil {
+		t.Fatal(err)
+	}
+	n2, err := mem.SymbolCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n2 != n1 {
+		t.Errorf("symbol count changed after no-op index: %d -> %d", n1, n2)
+	}
 }

@@ -4,18 +4,25 @@ import "pads-v3/internal/policy/evolution"
 
 // PoolStats holds AgentPool statistics for health reporting.
 type PoolStats struct {
-	Size     int                          `json:"pool_size"`
-	BestArm  string                       `json:"best_arm"`
+	Size     int                                `json:"pool_size"`
+	BestArm  string                             `json:"best_arm"`
 	ArmStats map[string]evolution.UCBArmStats `json:"arm_stats"`
+}
+
+// AutonomousStatus holds the state of the autonomous mode.
+type AutonomousStatus struct {
+	Enabled  bool  `json:"enabled"`
+	Cycles   int64 `json:"cycles"`
 }
 
 // HealthChecker holds the health status of each system component.
 type HealthChecker struct {
-	DB             bool       `json:"db"`
-	WAL            bool       `json:"wal"`
-	SemanticMemory bool       `json:"semantic_memory"`
-	Worker         bool       `json:"worker"`
-	Pool           *PoolStats `json:"pool,omitempty"`
+	DB             bool              `json:"db"`
+	WAL            bool              `json:"wal"`
+	SemanticMemory bool              `json:"semantic_memory"`
+	Worker         bool              `json:"worker"`
+	Pool           *PoolStats        `json:"pool,omitempty"`
+	Autonomous     *AutonomousStatus `json:"autonomous,omitempty"`
 }
 
 // Check returns the current health status of all components.
@@ -33,6 +40,13 @@ func Check() HealthChecker {
 func CheckWithPool(poolStats *PoolStats) HealthChecker {
 	h := Check()
 	h.Pool = poolStats
+	return h
+}
+
+// CheckWithAutonomous returns a HealthChecker with autonomous mode status.
+func CheckWithAutonomous(autoStats *AutonomousStatus) HealthChecker {
+	h := Check()
+	h.Autonomous = autoStats
 	return h
 }
 
