@@ -1,121 +1,204 @@
-# PADS v3 — Exécution déterministe et système de débogage résistant au chaos
+# PADS — Policy-Augmented Deterministic System
 
-PADS v3 est un système expérimental basé sur Go conçu pour valider la reconstruction
-d'état déterministe dans des environnements sujets aux défaillances à l'aide de la
-relecture d'événements, des boucles de réduction et des tests d'injection de chaos.
+[![Build](https://github.com/LaPurge404/pads-v3/actions/workflows/pads-ci.yml/badge.svg)](https://github.com/LaPurge404/pads-v3/actions/workflows/pads-ci.yml)
 
-L'idée de base : le système doit toujours converger vers le même état final, même
-sous la corruption, les crashs ou les défaillances randomisées.
+**PADS** est un moteur d'évolution auto‑protégé conçu pour les pipelines CI/CD et les systèmes autonomes.
+Il applique des politiques d'évaluation, détecte l'instabilité, journalise chaque décision de manière déterministe,
+et peut rejouer l'intégralité de son historique (event‑sourcing).
 
-## 🎯 Objectifs fondamentaux
+---
 
-PADS v3 valide qu'un système peut :
-- Reconstruire l'état de manière déterministe à partir des journaux d'événements
-- Maintenir la cohérence de l'état du graphe L3 à travers les reconstructions
-- Survivre à la corruption WAL et à la perte de fichiers
-- Gérer les exécutions randomisées et les échecs IO
-- Converger vers un état final stable sous des boucles de réduction répétées
-- Exécuter du code Go réel dans un environnement sandboxé et reproductible
-
-## 🏗️ Architecture du système
-
-Le système est composé de cinq couches principales :
-
-1. **Couche d'événement** : stocke les événements d'exécution brute et les relations.
-   `events` → résultats d'exécution, `event_nodes` → mappage entre événements et nœuds.
-
-2. **Couche de stockage (SQLite)** : moteur de persistance responsable de la gestion
-   du schéma, de la cohérence transactionnelle et du stockage d'état graphique.
-   Backend : `modernc.org/sqlite`.
-
-3. **Moteur de réduction (Core Logic)** : système de reconstruction de l'état
-   déterministe. Rejoue les journaux d'événements, construit `graph_state`,
-   assure la convergence vers `STABLE` ou `BROKEN`. Cette couche est purement
-   déterministe.
-
-4. **Execution Engine** : moteur d'exécution sandboxé qui exécute `go test` sur
-   les fichiers source associés aux nœuds `UNTESTED`. Il initialise un module Go
-   temporaire (`go mod init tempmod`) pour garantir une exécution reproductible
-   et isolée. Les résultats sont injectés dans L2 sous forme d'événements
-   `OS_EXEC_RESULT`.
-
-5. **Couche d'injection de faute (Chaos Engine)** : simule les défaillances du
-   monde réel (latence, erreurs IO, échecs d'écriture, conditions SQLITE_BUSY).
-   Utilisé exclusivement pour la validation de la robustesse.
-
-## 🔁 Flux de système
+## Architecture (v3)
 
 ```
 
-Événements (L2) → Stockage SQLite → Moteur de réduction → Graph State (L3)
-↑
-Execution Engine
-↑
-Code source Go
+     ┌──────────────┐     ┌───────────────────┐
+  HTTP API   │────▶│ Event Queue  │────▶│ Async Worker      │
+ (dashboard) │     │ (persistée)  │     │ (reprise crash)   │
+     └──────────────┘     └─────────┬─────────┘
+
+                })
+
+ SafeEvolutionLoopV3  │
+  • MultiCycleEvaluator
+  • StabilityGate (adaptatif)
+  • AntiCollapseDetector
+  • RollbackManager
+  • WAL + EventStore   │
+
+
+                })
+
+  ReplayEngine        │
+  (time‑travel debug) │
+
 
 ```
 
-## 🧪 Stratégie de test
+---
 
-PADS v3 utilise la validation pilotée par le chaos.
+## Variables d'environnement
 
-### Tests Déterministes
-- Reconstruction complète à partir de zéro
-- Duplication d'événements
-- Stabilité de l'ordre des événements
-- Validation de la convergence par rejeu
+| Variable | Description |
+|----------|-------------|
+| `PADS_TOKEN` | Token Bearer pour l'authentification API. |
+| `NVIDIA_API_KEY` | Clé API NVIDIA NIM (fournisseur LLM par défaut). |
+| `OPENAI_API_KEY` | Clé API OpenAI pour `OpenAIClient`. |
+| `ANTHROPIC_API_KEY` | Clé API Anthropic pour `ClaudeClient`. |
 
-### Tests de chaos
-- Simulation de suppression de fichiers WAL
-- Validation de récupération après crash
-- Écritures partielles et état corrompu
-- Injection de défaillance IO aléatoire
-- Validation de convergence multi-exécutions
+---
 
-## ⚙️ Tech Stack
+## Démarrage rapide
 
-- Go (moteur de base)
-- SQLite (`modernc.org/sqlite`)
-- Primitives de concurrence de la bibliothèque standard
-- Driver d'injection de fautes personnalisé
+```bash
+# Cloner le dépôt
+git clone https://github.com/LaPurge404/pads-v3.git
+cd pads-v3
 
-## 📁 Structure du projet
+# Lancer l'API
+go run ./cmd/evolution-api
 
+# Ouvrir http://127.0.0.1:8080
 ```
 
+Au premier lancement, un token Bearer est généré automatiquement et affiché dans le terminal. Utilisez-le pour les requêtes authentifiées.
+
+---
+
+## Endpoints HTTP
+
+L'API écoute sur `127.0.0.1:8080` :
+
+| Méthode | Path | Auth | Description |
+|---------|------|------|-------------|
+| `GET` | `/` | Non | Dashboard HTML interactif |
+| `GET` | `/health` | Non | Sonde de liveness — renvoie `OK` |
+| `GET` | `/dashboard/enriched` | Non | Dashboard enrichi avec UCB |
+| `POST` | `/evolve` | Oui | Soumettre un candidat (JSON) |
+| `GET` | `/state` | Oui | État système (rebuild via ReplayEngine) |
+| `POST` | `/rotate` | Oui | Rotation du token Bearer |
+| `GET` | `/select` | Oui | Bras UCB actuellement sélectionné |
+| `GET` | `/workspace` | Oui | Statut git et tests |
+| `POST` | `/agent/evolve` | Oui | Évolution via CodeAgent |
+| `GET` | `/agent/status` | Oui | Statistiques UCB des agents |
+| `GET` | `/agent/strategies` | Oui | Stratégies disponibles |
+
+Tous les endpoints protégés nécessitent le header :
+```
+Authorization: Bearer <token>
+```
+
+### Exemple curl
+
+```bash
+# Soumettre une évolution
+curl -s -X POST http://127.0.0.1:8080/evolve \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"candidate":12,"current":7,"weight":1.5,"mode":"stable"}'
+
+# Lire l'état système
+curl -s -H "Authorization: Bearer YOUR_TOKEN" \
+  http://127.0.0.1:8080/state
+
+# Rotater le token
+curl -s -X POST http://127.0.0.1:8080/rotate \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Replay (debug time‑travel)
+
+```bash
+go run ./cmd/evolution-replay -- -file evolution.log
+./evolution-replay -file evolution.log -full
+./evolution-replay -file evolution.log -state-at 5
+```
+
+---
+
+## Tests
+
+```bash
+# Tous les tests
+go test ./... -v
+
+# Couverture
+go test ./... -cover -coverprofile=coverage.out
+go tool cover -html=coverage.out -o coverage.html
+```
+
+Plus de 100 tests couvrent l'intégralité des composants (évaluateur, gate, détecteur, rollback, WAL, worker, replay, API).
+
+**Note** : Le flag `-race` n'est pas supporté sur Android/arm64. Les tests sur cette plateforme s'exécutent sans.
+
+---
+
+## Fonctionnalités
+
+- **Évaluation pondérée** : comparaison de configurations candidates.
+- **Stability Gate adaptatif** : seuil dynamique basé sur l'écart‑type historique.
+- **Anti‑collapse** : détection de variance, oscillation, drift.
+- **Rollback automatique** : restauration de l'état stable en cas d'instabilité.
+- **WAL persistant** : journal horodaté et chaîné (SHA‑256), recovers from crash.
+- **Event‑sourcing** : chaque décision est un événement immuable, rejouable à l'identique.
+- **Bandit multi‑bras** : exploration déterministe (seedable) pour l'apprentissage.
+- **CodeAgent** : agent autonome utilisant un LLM pour générer des corrections de code.
+- **Sandbox isolé** : validation des modifications avant application (copy-test-apply).
+- **API HTTP sécurisée** : token Bearer, rate limiting, écoute locale, TLS, rotation de token.
+- **Timeout HTTP** : chaque requête est limitée à 30s par défaut (configurable).
+- **Headers de sécurité** : `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`.
+- **Supervision en temps réel** : dashboard web avec formulaire de pilotage et métriques.
+
+---
+
+## Sécurité
+
+- Token d'accès obligatoire pour les endpoints sensibles.
+- Rate limiting : 10 requêtes/minute par token (configurable).
+- Middleware d'authentification exécuté **avant** le rate limiting.
+- Écoute restreinte à localhost par défaut.
+- TLS supporté (`-cert` et `-key`).
+- Rotation du token via `POST /rotate`.
+- Aucune clé API ou secret dans le code — tout via variables d'environnement.
+
+---
+
+## Structure du projet
+
+```
+cmd/
+  evolution-api/      # Serveur HTTP + dashboard
+  evolution-replay/   # Outil de replay CLI
+  pads/              # CLI principal
+  pads-ci/          # Client d'intégration CI
 internal/
-├── chaos/     → tests de chaos & récupération
-├── storage/   → couche d'abstraction SQLite
-├── reducer/   → moteur de réduction déterministe
-├── fault/     → driver d'injection de fautes
-├── resolver/  → couche de résolution d'événements
-├── symbol/    → utilitaires symboliques
-├── compiler/  → ingestion AST → graphe L1
-└── engine/    → moteur d'exécution sandboxé
-
+  agent/            # CodeAgent + Sandbox + LLM
+  policy/
+    evolution/      # Moteur d'évolution (cœur)
+    learner/        # Détection d'anomalies et apprentissage
+    shadow/         # Évaluation parallèle et A/B testing
+    change/         # Validation des propositions de changement
+    wal/            # Journal d'audit
+docs/
+  DESIGN.md         # Architecture détaillée
+  DEPLOY.md         # Guide de déploiement
+  ci/               # Documentation CI
 ```
 
-## 🧬 Propriété clé
+---
 
-Le système garantit que l'exécution répétée sur le même journal d'événements
-converge toujours vers le même état de graphe final, même sous échecs IO,
-pics de latence, erreurs d'exécution forcées ou suppression de fichier
-pendant l'exécution.
+## CI/CD
 
-## 🧪 Garantie de convergence
+Le pipeline GitHub Actions (`.github/workflows/pads-ci.yml`) exécute :
+1. `go build ./...`
+2. `go test ./... -count=1`
+3. Lancement de l'API en arrière-plan
+4. Exécution de `pads-ci` pour vérifier la stabilité
 
-Malgré les conditions de chaos, le système converge toujours vers `STABLE`
-ou `BROKEN`. C'est l'invariant principal de PADS v3.
+Le token est passé via `secrets.PADS_TOKEN` — jamais en clair.
 
-## 📌 Statut
+---
 
-- ✔ Moteur de réduction de noyau stable
-- ✔ Tests de chaos validés
-- ✔ Injection de fautes opérationnelle
-- ✔ Mécanismes de récupération vérifiés
-- ✔ Execution Engine avec sandbox Go reproductible
-- ✔ Boucle de réalité fermée (ingestion → exécution → feedback → convergence)
-
-## 📜 Licence
-
-Système expérimental / de recherche — aucune garantie de production.
+Projet maintenu par LaPurge404.
