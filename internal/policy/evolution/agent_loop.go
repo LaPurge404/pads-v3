@@ -191,10 +191,14 @@ func (al *AgentLoop) UCBStats() map[string]UCBArmStats {
 	for _, name := range al.selector.Names() {
 		arms := al.selector.Arms()
 		counts := al.selector.Counts()
+		avg := 0.0
+		if counts[name] > 0 {
+			avg = arms[name] / float64(counts[name])
+		}
 		stats[name] = UCBArmStats{
 			TotalReward: arms[name],
 			PullCount:   counts[name],
-			AvgReward:   arms[name] / float64(counts[name]),
+			AvgReward:   avg,
 		}
 	}
 	return stats

@@ -119,12 +119,12 @@ func main() {
 	mux.HandleFunc("/health", srv.health)
 	mux.HandleFunc("/dashboard/enriched", srv.dashboardEnriched)
 
-	// Protected endpoints: auth → rate limit → logging → handler
+	// Protected endpoints: securityHeaders → auth → rate limit → logging → handler
 	protected := func(path string, h http.HandlerFunc) {
 		chain := securityHeaders(h)
-		chain = evolution.LoggingMiddleware(chain)
-		chain = srv.authMiddleware(chain)
 		chain = srv.rl.Middleware(chain)
+		chain = srv.authMiddleware(chain)
+		chain = evolution.LoggingMiddleware(chain)
 		mux.HandleFunc(path, chain)
 	}
 

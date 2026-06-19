@@ -66,7 +66,9 @@ func (c *injectableConn) Begin() (driver.Tx, error) {
 	if c.shouldError(c.cfg.ErrorRate) {
 		return nil, fmt.Errorf("fault injected: begin error")
 	}
-	return c.conn.Begin()
+	// Prefer context-aware BeginTx when the underlying driver supports it.
+	tx, _ := c.BeginTx(context.Background(), nil)
+	return tx, nil
 }
 
 // BeginTx implements driver.ConnBeginTx.
@@ -77,6 +79,10 @@ func (c *injectableConn) BeginTx(ctx context.Context, opts *driver.TxOptions) (d
 		return nil, fmt.Errorf("fault injected: begin error")
 	}
 	if tx, ok := c.conn.(driver.ConnBeginTx); ok {
+		if opts == nil {
+			zeroOpts := driver.TxOptions{}
+			return tx.BeginTx(ctx, zeroOpts)
+		}
 		return tx.BeginTx(ctx, *opts)
 	}
 	return c.conn.Begin()
@@ -115,6 +121,9 @@ func (s *injectableStmt) Exec(args []driver.Value) (driver.Result, error) {
 	if s.shouldError(s.cfg.WriteFailRate) {
 		return nil, fmt.Errorf("fault injected: write failure")
 	}
+	if ec, ok := s.stmt.(driver.StmtExecContext); ok {
+		return ec.ExecContext(context.Background(), namedValuesFromValues(args))
+	}
 	return s.stmt.Exec(args)
 }
 
@@ -125,6 +134,9 @@ func (s *injectableStmt) Query(args []driver.Value) (driver.Rows, error) {
 	}
 	if s.shouldError(s.cfg.IORate) {
 		return nil, fmt.Errorf("fault injected: IO error")
+	}
+	if qc, ok := s.stmt.(driver.StmtQueryContext); ok {
+		return qc.QueryContext(context.Background(), namedValuesFromValues(args))
 	}
 	return s.stmt.Query(args)
 }
@@ -189,4 +201,14 @@ func OpenFaultDB(dbPath string, cfg FaultConfig) (*sql.DB, error) {
 		rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
 	})
 	return sql.Open(driverName, dbPath)
+}
+
+// namedValuesFromValues converts []driver.Value to []driver.NamedValue.
+// This is needed when forwarding legacy Exec/Query calls to context-aware methods.
+func namedValuesFromValues(vals []driver.Value) []driver.NamedValue {
+	out := make([]driver.NamedValue, len(vals))
+	for i, v := range vals {
+		out[i] = driver.NamedValue{Ordinal: i + 1, Value: v}
+	}
+	return out
 }
