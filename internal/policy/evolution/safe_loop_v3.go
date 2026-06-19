@@ -1,6 +1,9 @@
 package evolution
 
-import "fmt"
+import (
+	"fmt"
+	"log/slog"
+)
 
 type SafeEvolutionLoopV3 struct {
     orchestrator *Orchestrator
@@ -40,7 +43,11 @@ func NewSafeEvolutionLoopV3Minimal(mode Mode, selector Selector) *SafeEvolutionL
 func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, weight float64) (bool, error) {
 	result, accepted := l.orchestrator.Evaluate(candidate, current, weight)
 
-	l.rollback.wal.Append(candidate.Score, current.Score, weight, l.mode)
+	if l.rollback.wal != nil {
+		if _, err := l.rollback.wal.Append(candidate.Score, current.Score, weight, l.mode); err != nil {
+			slog.Error("WAL Append failed", "err", err)
+		}
+	}
 	l.detector.Add(float64(result.Score))
 
 	if _, rolledBack := l.rollback.RollbackIfUnstable(); rolledBack {
@@ -69,8 +76,10 @@ func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, wei
 		StabilityScore: stabilityScore,
 		Reason:         BuildReason(accepted, candidate.Score, current.Score, stabilityScore-float64(current.Score)),
 	}
-	if err := l.eventStore.Append(ev); err != nil {
-		return accepted, fmt.Errorf("échec écriture event store : %w", err)
+	if l.eventStore != nil {
+		if err := l.eventStore.Append(ev); err != nil {
+			return accepted, fmt.Errorf("échec écriture event store : %w", err)
+		}
 	}
 
 	return accepted, nil

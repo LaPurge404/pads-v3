@@ -13,9 +13,12 @@ func NewWALBridge(mem *WAL, disk *WALStore) *WALBridge {
 }
 
 func (b *WALBridge) Append(candidate, current int, weight float64, mode Mode) (Entry, error) {
-    entry := b.mem.Append(candidate, current, weight, mode)
-    if err := b.disk.Append(entry); err != nil {
-        return entry, err
-    }
-    return entry, nil
+	entry, err := b.mem.Append(candidate, current, weight, mode)
+	if err != nil {
+		return entry, err
+	}
+	if err := b.disk.Append(entry); err != nil {
+		return entry, err
+	}
+	return entry, nil
 }

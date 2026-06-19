@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -72,7 +73,7 @@ func (w *WAL) Close() error {
 	return nil
 }
 
-func (w *WAL) Append(candidate, current int, weight float64, mode Mode) Entry {
+func (w *WAL) Append(candidate, current int, weight float64, mode Mode) (Entry, error) {
 	var prevHash string
 	if len(w.entries) > 0 {
 		prevHash = w.entries[len(w.entries)-1].Hash
@@ -89,25 +90,34 @@ func (w *WAL) Append(candidate, current int, weight float64, mode Mode) Entry {
 	w.entries = append(w.entries, entry)
 
 	// Persist immediately to disk
-	w.flushEntry(entry)
+	if err := w.flushEntry(entry); err != nil {
+		return entry, err
+	}
 
-	return entry
+	return entry, nil
 }
 
-func (w *WAL) flushEntry(entry Entry) {
+func (w *WAL) flushEntry(entry Entry) error {
 	if w.file == nil {
-		return
+		return nil
 	}
 
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Append to file with newline
-	w.file.Write(append(data, '\n'))
+	if _, err := w.file.Write(append(data, '\n')); err != nil {
+		slog.Error("WAL write error", "err", err)
+		return err
+	}
 	// Sync to ensure it's written to disk
-	w.file.Sync()
+	if err := w.file.Sync(); err != nil {
+		slog.Error("WAL sync error", "err", err)
+		return err
+	}
+	return nil
 }
 
 func computeHash(e Entry) string {

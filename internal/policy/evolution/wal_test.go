@@ -7,23 +7,28 @@ import (
 )
 
 func TestWAL_Append(t *testing.T) {
-    wal := evolution.NewWAL("")
-    entry := wal.Append(80, 50, 1.0, evolution.ModeStable)
-    if entry.CandidateScore != 80 {
-        t.Fatalf("expected 80, got %d", entry.CandidateScore)
-    }
-    if len(entry.Hash) == 0 {
-        t.Fatal("hash empty")
-    }
+	wal := evolution.NewWAL("")
+	entry, err := wal.Append(80, 50, 1.0, evolution.ModeStable)
+	if err != nil {
+		t.Fatalf("Append failed: %v", err)
+	}
+	if entry.CandidateScore != 80 {
+		t.Fatalf("expected 80, got %d", entry.CandidateScore)
+	}
+	if len(entry.Hash) == 0 {
+		t.Fatal("hash empty")
+	}
 }
 
 func TestWAL_LastEntry(t *testing.T) {
-    wal := evolution.NewWAL("")
-    wal.Append(10, 5, 0.5, evolution.ModeBandit)
-    last := wal.LastEntry()
-    if last == nil || last.CandidateScore != 10 {
-        t.Fatal("last entry mismatch")
-    }
+	wal := evolution.NewWAL("")
+	if _, err := wal.Append(10, 5, 0.5, evolution.ModeBandit); err != nil {
+		t.Fatalf("Append failed: %v", err)
+	}
+	last := wal.LastEntry()
+	if last == nil || last.CandidateScore != 10 {
+		t.Fatal("last entry mismatch")
+	}
 }
 
 func TestWALStore_PersistAndReplay(t *testing.T) {
