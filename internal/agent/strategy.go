@@ -173,12 +173,13 @@ func BuildPromptForStrategy(task Task, ctx Context, strategy *AgentStrategy) Cod
 	}
 }
 
-// ApplyStrategyToLLM applies a strategy's temperature to the LLM client.
-// This is a no-op in current implementation but allows future per-request temp control.
-func ApplyStrategyToLLM(llm LLMClient, strategy *AgentStrategy) LLMClient {
-	// Currently temperature is per-call in GenerateCode
-	// Future: wrap client to inject temperature per request
-	return llm
+// ApplyStrategyToLLM applies a strategy's temperature to the code prompt.
+// Call this on the CodePrompt before passing it to LLMClient.GenerateCode.
+// If strategy.Temperature is 0, the LLM client uses its default (0.3).
+func ApplyStrategyToLLM(prompt *CodePrompt, strategy *AgentStrategy) {
+	if strategy != nil && strategy.Temperature > 0 {
+		prompt.Temperature = strategy.Temperature
+	}
 }
 
 // StrategyForUCBArm returns the AgentStrategy matching the UCB arm name.
@@ -224,6 +225,9 @@ func (sa *StrategyAdapter) SolveWithStrategy(task Task, ctx Context) (*CodeRespo
 
 	// Build prompt with strategy
 	prompt := BuildPromptForStrategy(task, ctx, strategy)
+
+	// Apply strategy temperature to the prompt
+	ApplyStrategyToLLM(&prompt, strategy)
 
 	// Query LLM
 	resp, err := sa.Agent.llm.GenerateCode(context.Background(), prompt)

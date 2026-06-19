@@ -29,6 +29,9 @@ type CodePrompt struct {
 	Context string
 	// Constraints or requirements
 	Constraints string
+	// Temperature for LLM sampling (0.0-2.0, default 0.3 if 0).
+	// Set by ApplyStrategyToLLM based on UCB strategy.
+	Temperature float64
 }
 
 // CodeResponse contains the LLM's response for code generation.
@@ -107,7 +110,7 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": userPrompt},
 		},
-		"temperature": 0.3,
+		"temperature": temperatureFor(prompt.Temperature),
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -243,6 +246,15 @@ const (
 	maxBackoff     = 8 * time.Second
 )
 
+// temperatureFor returns temp if it is a positive value, otherwise the default 0.3.
+// This lets callers leave Temperature at 0 to mean "use default".
+func temperatureFor(temp float64) float64 {
+	if temp > 0 {
+		return temp
+	}
+	return 0.3
+}
+
 // NvidiaClient implements LLMClient using the NVIDIA API (NIM/inference endpoints).
 // This is the DEFAULT client when no specific provider is requested.
 type NvidiaClient struct {
@@ -311,7 +323,7 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": userPrompt},
 		},
-		"temperature": 0.3,
+		"temperature": temperatureFor(prompt.Temperature),
 		"max_tokens":  4096,
 	}
 
