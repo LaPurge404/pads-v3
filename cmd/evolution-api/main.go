@@ -278,15 +278,16 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 			poolStats.BestArm = best.UCBArm
 		}
 		poolStats.ArmStats = s.pool.PoolStats()
-		h.Pool = poolStats
+		h = health.CheckWithPool(h, poolStats)
 	}
 
 	// Add autonomous mode status.
 	if s.autonomousMode != nil {
-		h.Autonomous = &health.AutonomousStatus{
+		autoStats := &health.AutonomousStatus{
 			Enabled: s.autonomousMode.IsEnabled(),
 			Cycles:  s.autonomousMode.CycleNum(),
 		}
+		h = health.CheckWithAutonomous(h, autoStats)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

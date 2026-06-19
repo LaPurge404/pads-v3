@@ -101,16 +101,16 @@ func Check() HealthChecker {
 	}
 }
 
-// CheckWithPool returns a HealthChecker with optional AgentPool statistics.
-func CheckWithPool(poolStats *PoolStats) HealthChecker {
-	h := Check()
+// CheckWithPool enriches h with AgentPool statistics.
+// h should be obtained from a real Checker.Check() call to preserve true health data.
+func CheckWithPool(h HealthChecker, poolStats *PoolStats) HealthChecker {
 	h.Pool = poolStats
 	return h
 }
 
-// CheckWithAutonomous returns a HealthChecker with autonomous mode status.
-func CheckWithAutonomous(autoStats *AutonomousStatus) HealthChecker {
-	h := Check()
+// CheckWithAutonomous enriches h with autonomous mode status.
+// h should be obtained from a real Checker.Check() call to preserve true health data.
+func CheckWithAutonomous(h HealthChecker, autoStats *AutonomousStatus) HealthChecker {
 	h.Autonomous = autoStats
 	return h
 }

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -127,10 +128,12 @@ func (ap *AgentPool) RunAll(ctx context.Context, task Task, ctxContext Context) 
 			// Step 1: generate plan
 			plan, err := agent.CodeAgent.Solve(task, agentCtx)
 			if err != nil {
+				r.err = err
 				r.result = &evolution.AgentResult{
 					UCBArm: agent.Strategy,
 					Reason: "CodeAgent.Solve failed: " + err.Error(),
 				}
+				slog.Warn("agent Solve failed", "strategy", agent.Strategy, "error", err)
 				resCh <- r
 				return
 			}
@@ -139,6 +142,7 @@ func (ap *AgentPool) RunAll(ctx context.Context, task Task, ctxContext Context) 
 			sandboxRes := agent.SandboxExec.ExecuteWithSandbox(plan)
 			if sandboxRes.Error != nil {
 				// Even failures are learning events.
+				r.err = sandboxRes.Error
 				evResult := agent.Loop.Evaluate(
 					evolution.BuildAgentCandidate(agent.Strategy+"_"+task.Target, task.Target, serializePlan(plan), 0, agent.Strategy),
 					50, // default starting score
@@ -148,6 +152,7 @@ func (ap *AgentPool) RunAll(ctx context.Context, task Task, ctxContext Context) 
 				)
 				evResult.Reason = "sandbox_error: " + sandboxRes.Error.Error()
 				r.result = &evResult
+				slog.Warn("agent sandbox failed", "strategy", agent.Strategy, "error", sandboxRes.Error)
 				resCh <- r
 				return
 			}
@@ -220,12 +225,9 @@ func (ap *AgentPool) PoolStats() map[string]evolution.UCBArmStats {
 	stats := make(map[string]evolution.UCBArmStats)
 	for _, agent := range ap.agents {
 		agent.mu.RLock()
-		defer agent.mu.RUnlock()
-		stats[agent.Strategy] = evolution.UCBArmStats{
-			TotalReward: agent.Loop.UCBStats()[agent.Strategy].TotalReward,
-			PullCount:   agent.Loop.UCBStats()[agent.Strategy].PullCount,
-			AvgReward:   agent.Loop.UCBStats()[agent.Strategy].AvgReward,
-		}
+		ucbStats := agent.Loop.UCBStats()
+		agent.mu.RUnlock()
+		stats[agent.Strategy] = ucbStats[agent.Strategy]
 	}
 	return stats
 }

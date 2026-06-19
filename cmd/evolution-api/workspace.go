@@ -14,15 +14,37 @@ func (s *Server) workspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	passed, failed := runTestsOnce()
+
 	resp := map[string]interface{}{
 		"gitBranch":  getGitBranch(),
 		"gitStatus":  getGitStatus(),
-		"testPassed": getTestPassedCount(),
-		"testFailed": getTestFailedCount(),
+		"testPassed": passed,
+		"testFailed": failed,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// runTestsOnce executes "go test ./..." once and returns (passed, failed) counts.
+func runTestsOnce() (passed, failed int) {
+	cmd := exec.Command("go", "test", "./...", "-count=1")
+	out, err := cmd.CombinedOutput()
+	lines := strings.Split(string(out), "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "ok  ") {
+			passed++
+		} else if strings.HasPrefix(l, "FAIL ") {
+			failed++
+		}
+	}
+	// If the command failed globally but no FAIL lines detected, count 1 failure.
+	if err != nil && failed == 0 {
+		failed = 1
+	}
+	return passed, failed
 }
 
 // getGitBranch returns the current Git branch or "not available".
@@ -46,42 +68,4 @@ func getGitStatus() string {
 		return "(propre)"
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// getTestPassedCount runs go test and counts the packages that passed.
-func getTestPassedCount() int {
-	cmd := exec.Command("go", "test", "./...", "-count=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// the command failed, but we still count the ok packages for the dashboard
-	}
-	lines := strings.Split(string(out), "\n")
-	count := 0
-	for _, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "ok ") {
-			count++
-		}
-	}
-	return count
-}
-
-// getTestFailedCount counts the packages that failed.
-func getTestFailedCount() int {
-	cmd := exec.Command("go", "test", "./...", "-count=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// same
-	}
-	lines := strings.Split(string(out), "\n")
-	count := 0
-	for _, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "FAIL ") {
-			count++
-		}
-	}
-	// If the command failed globally but no FAIL detected, we count 1 failure
-	if err != nil && count == 0 {
-		count = 1
-	}
-	return count
 }
