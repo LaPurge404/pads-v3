@@ -90,9 +90,9 @@ func (m *Mode) RunCycle(
 
 	// Step 1: Generate plan via CodeAgent
 	candidateID := generateID()
-	resp, err := codeAgent.Solve(task, agent.Context{
-		FilePath: task.Target,
-	})
+	ctx := agent.Context{FilePath: task.Target}
+	ctx.Enrich(task.Target, 200)
+	resp, err := codeAgent.Solve(task, ctx)
 	if err != nil {
 		slog.Warn("autonomous: Solve failed", "cycle", cycle, "err", err)
 		return RunCycleResult{Cycle: cycle, Task: task.Goal, Error: fmt.Sprintf("Solve: %v", err)}

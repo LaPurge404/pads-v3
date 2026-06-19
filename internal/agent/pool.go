@@ -119,8 +119,13 @@ func (ap *AgentPool) RunAll(ctx context.Context, task Task, ctxContext Context) 
 
 			semMem := ap.semMemGetter()
 
+			// Enrich context: inject source code and semantic context.
+			agentCtx := ctxContext
+			agentCtx.SemMem = semMem
+			agentCtx.Enrich(task.Target, 200)
+
 			// Step 1: generate plan
-			plan, err := agent.CodeAgent.Solve(task, ctxContext)
+			plan, err := agent.CodeAgent.Solve(task, agentCtx)
 			if err != nil {
 				r.result = &evolution.AgentResult{
 					UCBArm: agent.Strategy,

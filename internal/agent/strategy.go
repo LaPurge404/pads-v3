@@ -157,6 +157,13 @@ func BuildPromptForStrategy(task Task, ctx Context, strategy *AgentStrategy) Cod
 		}
 	}
 
+	// Inject the target source file content and semantic context.
+	if ctx.SourceContent != "" {
+		context.WriteString("\n--- Target source ---\n")
+		context.WriteString(ctx.SourceContent)
+		context.WriteString("\n--- End source ---\n")
+	}
+
 	return CodePrompt{
 		Task:        task.Goal,
 		FilePath:    task.Target,
