@@ -2,7 +2,6 @@ package wal
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 
@@ -52,6 +51,7 @@ func (w *PolicyWAL) Append(event PolicyEvent) error {
 }
 
 // ReadAll reads all policy events from the WAL.
+// Corrupted lines are skipped; partial results are returned if any events parse successfully.
 func (w *PolicyWAL) ReadAll() ([]PolicyEvent, error) {
 	data, err := os.ReadFile(w.path)
 	if err != nil {
@@ -68,7 +68,8 @@ func (w *PolicyWAL) ReadAll() ([]PolicyEvent, error) {
 		}
 		var e PolicyEvent
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			return nil, fmt.Errorf("wal parse: %w (line: %s)", err, line)
+			// Skip corrupted lines: WAL is append-only and may be partially corrupted.
+			continue
 		}
 		events = append(events, e)
 	}

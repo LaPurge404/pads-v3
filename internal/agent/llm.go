@@ -118,13 +118,7 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
-
+	// Create request body bytes once; fresh request + fresh body reader per retry.
 	var lastErr error
 	backoff := initialBackoff
 
@@ -138,7 +132,22 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 			}
 		}
 
-		client := &http.Client{Timeout: c.Timeout}
+		// Fresh request + body per attempt (avoids body-position state issues).
+		freshBody := bytes.NewReader(body)
+		req, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", freshBody)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+		client := &http.Client{
+			Timeout: c.Timeout,
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+				MaxIdleConns:     -1,
+			},
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("send request: %w", err)
@@ -261,7 +270,7 @@ type NvidiaClient struct {
 	APIKey  string
 	Model   string
 	BaseURL string
-	Timeout time.Duration
+	Timeout time.Duration // exported for test configuration
 }
 
 // NewNvidiaClient creates a NVIDIA LLM client.
@@ -332,12 +341,9 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	// Create request body bytes once; inside the retry loop we create a fresh
+	// request with a fresh body reader each time to avoid any body-position
+	// state issues that could bleed between retries.
 
 	var lastErr error
 	backoff := initialBackoff
@@ -352,7 +358,26 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 			}
 		}
 
-		client := &http.Client{Timeout: c.Timeout}
+		// Create fresh body reader and request for each attempt to avoid
+		// any body-consumption state from bleeding between retries.
+		freshBody := bytes.NewReader(body)
+		req, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", freshBody)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+		// Use a fresh http.Client with DisableKeepAlives per attempt to avoid
+		// connection-pool corruption from timed-out requests (a new socket is opened
+		// for each retry, so a timed-out response on one connection does not bleed into the next).
+		client := &http.Client{
+			Timeout: c.Timeout,
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+				MaxIdleConns:     -1,
+			},
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("send request: %w", err)
