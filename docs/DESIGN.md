@@ -53,7 +53,7 @@ The token can be supplied via the `PADS_TOKEN` environment variable, a `token.tx
 
 | Method | URL | Description | Example `curl` (with token) | Expected response |
 |--------|-----|-------------|-----------------------------|-------------------|
-| `GET` | `/health` | Liveness probe – always returns plain text `OK`. | `curl -s http://127.0.0.1:8080/health` | `OK` (plain‑text) |
+| `GET` | `/health` | Liveness probe – returns a JSON `HealthChecker` with fields `db`, `wal`, `semantic_memory`, `worker`, and optionally `pool` and `autonomous`. | `curl -s http://127.0.0.1:8080/health` | JSON, e.g. `{"db":true,"wal":true,"semantic_memory":true,"worker":true}` |
 | `GET` | `/state` | Returns the full system state derived from all stored events **by rebuilding** with `ReplayEngine.Rebuild()`. | `curl -s -H "Authorization: Bearer *** http://127.0.0.1:8080/state"` | JSON serialization of `SystemState` (see `system_state.go`); e.g. a typical payload looks like `{"bandit":{},"gate":{},"detector_window":[],"mode":"stable","sequence":0,"stability_score":0,"trend":0,"reason":""}` |
 | `POST` | `/evolve` | Submits a new evolution request. Body must contain `candidate`, `current`, `weight`, `mode`. The server validates, creates a `QueueEvent`, and enqueues it. | ```bash\ncurl -s -X POST http://127.0.0.1:8080/evolve \\\n  -H "Authorization: Bearer ***" \\\n  -H "Content-Type: application/json" \\\n  -d '{"candidate":12,"current":7,"weight":1.5,"mode":"stable"}'\n``` | `{"status":"queued","id":"<generated-id>"}` |
 | `GET` | `/select` | Returns the arm chosen by the bandit selector for the next exploration step. | `curl -s -H "Authorization: Bearer *** http://127.0.0.1:8080/select"` | `{"arm":"stable"}` (or `"bandit"`/`"locked"` depending on selector state) |

@@ -151,7 +151,7 @@ sudo systemctl start pads
 
 ```bash
 curl http://127.0.0.1:8080/health
-# Response: OK
+# Response: JSON, e.g. {"db":true,"wal":true,"semantic_memory":true,"worker":true}
 ```
 
 No authentication required for `/health`.
