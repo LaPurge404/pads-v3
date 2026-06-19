@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -121,33 +122,59 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	client := &http.Client{Timeout: c.Timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("send request: %w", err)
-	}
-	defer resp.Body.Close()
+	var lastErr error
+	backoff := initialBackoff
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error: status %d", resp.StatusCode)
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			slog.Warn("OpenAI LLM retry", "attempt", attempt+1, "maxRetries", maxRetries, "backoff", backoff, "err", lastErr)
+			time.Sleep(backoff)
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+
+		client := &http.Client{Timeout: c.Timeout}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("send request: %w", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("API error: status %d", resp.StatusCode)
+			resp.Body.Close()
+			if resp.StatusCode < 500 && resp.StatusCode != 429 {
+				break
+			}
+			continue
+		}
+
+		var result struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			lastErr = fmt.Errorf("decode response: %w", err)
+			resp.Body.Close()
+			continue
+		}
+		resp.Body.Close()
+
+		if len(result.Choices) == 0 {
+			lastErr = fmt.Errorf("no response from LLM")
+			continue
+		}
+
+		return c.parseResponse(result.Choices[0].Message.Content, prompt)
 	}
 
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no response from LLM")
-	}
-
-	return c.parseResponse(result.Choices[0].Message.Content, prompt)
+	slog.Error("OpenAI LLM exhausted retries", "attempts", maxRetries, "lastErr", lastErr)
+	return nil, fmt.Errorf("LLM call failed after %d attempts: %w", maxRetries, lastErr)
 }
 
 // parseResponse parses the LLM's text response into a CodeResponse.
@@ -208,6 +235,13 @@ func (c *ClaudeClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*Co
 	}
 	return nil, fmt.Errorf("Claude API not yet implemented")
 }
+
+// Retry constants for LLM calls.
+const (
+	maxRetries     = 3
+	initialBackoff = 1 * time.Second
+	maxBackoff     = 8 * time.Second
+)
 
 // NvidiaClient implements LLMClient using the NVIDIA API (NIM/inference endpoints).
 // This is the DEFAULT client when no specific provider is requested.
@@ -293,33 +327,60 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	client := &http.Client{Timeout: c.Timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("send request: %w", err)
-	}
-	defer resp.Body.Close()
+	var lastErr error
+	backoff := initialBackoff
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("NVIDIA API error: status %d", resp.StatusCode)
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			slog.Warn("NVIDIA LLM retry", "attempt", attempt+1, "maxRetries", maxRetries, "backoff", backoff, "err", lastErr)
+			time.Sleep(backoff)
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+
+		client := &http.Client{Timeout: c.Timeout}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("send request: %w", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("NVIDIA API error: status %d", resp.StatusCode)
+			resp.Body.Close()
+			// Don't retry on client errors (4xx except 429)
+			if resp.StatusCode < 500 && resp.StatusCode != 429 {
+				break
+			}
+			continue
+		}
+
+		var result struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			lastErr = fmt.Errorf("decode response: %w", err)
+			resp.Body.Close()
+			continue
+		}
+		resp.Body.Close()
+
+		if len(result.Choices) == 0 {
+			lastErr = fmt.Errorf("no response from NVIDIA LLM")
+			continue
+		}
+
+		return c.parseResponse(result.Choices[0].Message.Content, prompt)
 	}
 
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no response from NVIDIA LLM")
-	}
-
-	return c.parseResponse(result.Choices[0].Message.Content, prompt)
+	slog.Error("NVIDIA LLM exhausted retries", "attempts", maxRetries, "lastErr", lastErr)
+	return nil, fmt.Errorf("LLM call failed after %d attempts: %w", maxRetries, lastErr)
 }
 
 // parseResponse parses the LLM's text response into a CodeResponse.
