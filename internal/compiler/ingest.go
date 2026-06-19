@@ -15,14 +15,14 @@ import (
 	"pads-v3/internal/storage"
 )
 
-// IngestResult résume l'ingestion d'un fichier.
+// IngestResult summarizes the ingestion of a file.
 type IngestResult struct {
 	FilePath   string
 	NodesAdded int
 	EdgesAdded int
 }
 
-// nodeInfo représente un nœud extrait.
+// nodeInfo represents an extracted node.
 type nodeInfo struct {
 	ID           string
 	Type         string
@@ -31,20 +31,20 @@ type nodeInfo struct {
 	ArgsTypes    []string
 }
 
-// edgeInfo représente une arête extraite.
+// edgeInfo represents an extracted edge.
 type edgeInfo struct {
 	Source   string
 	Target   string
 	Relation string
 }
 
-// symbolKey est une clé composite stable pour un symbole local.
+// symbolKey is a stable composite key for a local symbol.
 type symbolKey struct {
 	receiver string
 	name     string
 }
 
-// IngestFile parse un fichier Go et insère son graphe L1 dans la base.
+// IngestFile parses a Go file and inserts its L1 graph into the database.
 func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filePath, nil, 0)
@@ -52,7 +52,7 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
 		return nil, fmt.Errorf("parse %s: %w", filePath, err)
 	}
 
-	// Calculer le hash du fichier
+	// Compute file hash
 	fileHash, err := computeFileHash(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("file hash %s: %w", filePath, err)
@@ -61,10 +61,10 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
 	pkgName := file.Name.Name
 	fileNodeID := fmt.Sprintf("%s/%s", pkgName, filePath)
 
-	// Extraction des symboles locaux.
+	// Extract local symbols.
 	canonicalID := make(map[symbolKey]string)
 
-	// Première passe : collecter les symboles.
+	// First pass: collect symbols.
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch decl := n.(type) {
 		case *ast.FuncDecl:
@@ -84,7 +84,7 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
 	var nodes []nodeInfo
 	var edges []edgeInfo
 
-	// Deuxième passe : extraction des nœuds et arcs.
+	// Second pass: extract nodes and edges.
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch decl := n.(type) {
 		case *ast.TypeSpec:
@@ -122,7 +122,7 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
 			nodes = append(nodes, nodeInfo{ID: id, Type: "func", Signature: funcName, ReceiverType: receiver, ArgsTypes: args})
 			edges = append(edges, edgeInfo{Source: fileNodeID, Target: id, Relation: "CONTAINS"})
 
-			// Extraction des CALLS
+			// Extract CALLS
 			if decl.Body != nil {
 				ast.Inspect(decl.Body, func(call ast.Node) bool {
 					callExpr, ok := call.(*ast.CallExpr)
@@ -162,7 +162,7 @@ func IngestFile(db *storage.DB, filePath string) (*IngestResult, error) {
 		edges = append(edges, edgeInfo{Source: fileNodeID, Target: path, Relation: "IMPORTS"})
 	}
 
-	// Normalisation et dédoublonnage
+	// Normalization and deduplication
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	sort.Slice(edges, func(i, j int) bool {
 		if edges[i].Source != edges[j].Source {
@@ -221,7 +221,7 @@ func computeFileHash(filePath string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// extractReceiverType retourne le type du receveur exactement tel qu'il apparaît dans l'AST.
+// extractReceiverType returns the receiver type exactly as it appears in the AST.
 func extractReceiverType(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
@@ -234,7 +234,7 @@ func extractReceiverType(expr ast.Expr) string {
 	return "unknown"
 }
 
-// computeSignatureHash calcule un SHA-256 déterministe pour un nœud.
+// computeSignatureHash computes a deterministic SHA-256 hash for a node.
 func computeSignatureHash(nd nodeInfo) (string, error) {
 	clean := func(s string) string { return strings.TrimSpace(s) }
 
@@ -265,7 +265,7 @@ func computeSignatureHash(nd nodeInfo) (string, error) {
 	return fmt.Sprintf("%x", h), nil
 }
 
-// typeToString retourne une représentation simplifiée d'un type.
+// typeToString returns a simplified representation of a type.
 func typeToString(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:

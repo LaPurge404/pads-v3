@@ -22,7 +22,7 @@ func main() {
 	interval := flag.Duration("interval", 30*time.Second, "interval between engine runs in daemon mode")
 	flag.Parse()
 
-	// Ouvrir la base de données
+	// Open the database
 	db, err := storage.Open(*dbPath)
 	if err != nil {
 		slog.Error("open db", "err", err)
@@ -30,7 +30,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// Ingestion initiale si un répertoire est spécifié
+	// Initial ingestion if a directory is specified
 	if *ingestDir != "" {
 		slog.Info("ingesting Go files", "dir", *ingestDir)
 		entries, err := os.ReadDir(*ingestDir)
@@ -52,26 +52,26 @@ func main() {
 	}
 
 	if *daemonMode {
-		// Mode daemon : boucle continue avec le scheduler
+		// Daemon mode: continuous loop with scheduler
 		slog.Info("starting daemon mode", "interval", *interval)
 		sched := scheduler.New(db, *interval)
 		go sched.Start()
 		defer sched.Stop()
 
-		// Attendre un signal pour arrêter
+		// Wait for a signal to stop
 		slog.Info("daemon running")
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt)
 		<-sigCh
 		slog.Info("shutting down daemon")
 	} else {
-		// Mode one-shot : exécution unique
+		// One-shot mode: single execution
 		slog.Info("running engine once")
 		if err := engine.RunOnce(db); err != nil {
 			slog.Error("engine error", "err", err)
 		}
 
-		// Afficher l'état final
+		// Display the final state
 		rows, err := db.Query(`SELECT node_id, state FROM graph_state ORDER BY node_id`)
 		if err != nil {
 			slog.Error("query state", "err", err)

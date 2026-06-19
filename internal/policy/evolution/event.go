@@ -9,6 +9,6 @@ type Event struct {
 	BanditSeed     int64
 	GateVariance   float64
 	GateThreshold  float64
-	StabilityScore float64 // score de stabilité après ce cycle
-	Reason         string  // explication lisible de la décision
+	StabilityScore float64 // stability score after this cycle
+	Reason         string  // human-readable explanation of the decision
 }

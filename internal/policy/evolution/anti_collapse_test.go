@@ -12,14 +12,14 @@ func TestAntiCollapseDetector_Variance(t *testing.T) {
 	d.Add(10)
 	d.Add(20)
 	d.Add(30)
-	// Variance devrait être > 0
+	// Variance should be > 0
 	if d.Variance() == 0 {
 		t.Fatal("expected non-zero variance")
 	}
 }
 
 func TestAntiCollapseDetector_Stable(t *testing.T) {
-	d := evolution.NewAntiCollapseDetector(5, 1.0) // seuil très bas
+	d := evolution.NewAntiCollapseDetector(5, 1.0) // very low threshold
 	d.Add(10)
 	d.Add(10)
 	d.Add(10)

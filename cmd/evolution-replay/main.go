@@ -29,11 +29,11 @@ func main() {
 
 	engine := evolution.NewReplayEngine(events)
 
-	// Reconstruire l'état final
+	// Rebuild the final state
 	finalState := engine.Rebuild()
 
 	if *stateAtFlag >= 0 {
-		// Rejouer seulement jusqu'à la séquence demandée
+		// Replay only up to the requested sequence
 		if *stateAtFlag == 0 {
 			printState(0, evolution.SystemState{})
 			return
@@ -51,9 +51,9 @@ func main() {
 	}
 
 	if *fullFlag || *stepFlag {
-		// Rejeu séquentiel avec affichage progressif
+		// Sequential replay with progressive display
 		for i := range events {
-			// Reconstruire jusqu'à l'événement i inclus
+			// Rebuild up to and including event i
 			partialEngine := evolution.NewReplayEngine(events[:i+1])
 			state := partialEngine.Rebuild()
 			printState(events[i].Sequence, state)
@@ -63,7 +63,7 @@ func main() {
 			}
 		}
 	} else {
-		// Comportement par défaut : afficher l'état final
+		// Default behavior: display the final state
 		fmt.Printf("État final après %d événements :\n", len(events))
 		printState(finalState.Sequence, finalState)
 	}

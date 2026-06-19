@@ -159,27 +159,27 @@ func detectLanguage(filePath string) string {
 	}
 }
 
-// DiffState représente l'état courant du parsing d'un diff.
+// DiffState represents the current state of diff patch parsing.
 type DiffState int
 
 const (
-	// StateTextHunk: hors section diff, on copie tel quel
+	// StateTextHunk: outside diff sections, copy as-is
 	StateTextHunk DiffState = iota
-	// StateDiffHeader: dans l'en-tête d'un diff (---, +++, diff, index)
+	// StateDiffHeader: inside a diff header (---, +++, diff, index)
 	StateDiffHeader
-	// StateHunkMeta: ligne de métadonnées de hunk (@@)
+	// StateHunkMeta: hunk metadata line (@@)
 	StateHunkMeta
-	// StateHunkBody: corps du hunk (contexte, additions, suppressions)
+	// StateHunkBody: hunk body (context, additions, deletions)
 	StateHunkBody
 )
 
-// diffHeaderPrefix retourne true si la ligne est un en-tête de diff.
+// diffHeaderPrefix returns true if the line is a diff header line.
 func diffHeaderPrefix(line string) bool {
 	return strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") ||
 		strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "index ")
 }
 
-// isHunkMeta retourne true si la ligne est une métadonnée de hunk.
+// isHunkMeta returns true if the line is a hunk metadata line.
 func isHunkMeta(line string) bool {
 	return strings.HasPrefix(line, "@@") && strings.Contains(line, "@@")
 }
@@ -200,16 +200,16 @@ func isDiffMetaLine(line string) bool {
 }
 
 // stripDiffMarkers removes diff headers from a patch to get clean code.
-// Implémentation basée sur une machine à états pour une robustesse maximale.
-// Règles :
-//   - En-têtes de diff (---, +++, diff, index) : supprimés
-//   - Métadonnées de hunk (@@ ... @@) : supprimées
-//   - Métadonnées étendues (new file mode, Binary files, etc.) : supprimées
-//   - Lignes de suppression (-) dans un hunk : supprimées
-//   - Lignes de contexte (espace) et d'addition (+) : conservées AVEC leur préfixe
-//   - Hors section diff : copié tel quel
-//   - Lignes vides dans un hunk : conservées
-//   - Lignes sans préfixe dans un hunk : fin du hunk, retour au texte
+// Implementation based on a state machine for maximum robustness.
+// Rules:
+//   - Diff headers (---, +++, diff, index): removed
+//   - Hunk metadata (@@ ... @@): removed
+//   - Extended metadata (new file mode, Binary files, etc.): removed
+//   - Deletion lines (-) in a hunk: removed
+//   - Context lines (space prefix) and addition lines (+): kept WITH their prefix
+//   - Outside diff sections: copied as-is
+//   - Empty lines in a hunk: kept
+//   - Lines without standard prefix in a hunk: end of hunk, return to text
 func stripDiffMarkers(patch string) string {
 	lines := strings.Split(patch, "\n")
 	var result []string
@@ -222,7 +222,7 @@ func stripDiffMarkers(patch string) string {
 				state = StateDiffHeader
 				continue
 			}
-			// Début de hunk sans en-tête (ex: patch minimal)
+			// Start of hunk without header (e.g., minimal patch)
 			if isHunkMeta(line) {
 				state = StateHunkMeta
 				continue
@@ -230,58 +230,58 @@ func stripDiffMarkers(patch string) string {
 			result = append(result, line)
 
 		case StateDiffHeader:
-			// @@ → début du hunk
+			// @@ → start of hunk
 			if isHunkMeta(line) {
 				state = StateHunkMeta
 				continue
 			}
-			// Plus d'en-têtes ou de métadonnées
+			// No more headers or metadata
 			if diffHeaderPrefix(line) || isDiffMetaLine(line) {
 				continue
 			}
-			// Ligne normale qui n'est ni un en-tête ni un hunk → retour au texte
+			// Normal line that is neither header nor hunk → return to text
 			state = StateTextHunk
 			result = append(result, line)
 
 		case StateHunkMeta:
-			// Après @@, on entre dans le corps du hunk. On évalue la ligne
-			// suivante comme faisant partie de ce corps.
+			// After @@, we enter the hunk body. The next line is evaluated
+			// as part of this body.
 			state = StateHunkBody
 			fallthrough
 
 		case StateHunkBody:
-			// Nouveau fichier dans le diff
+			// New file in the diff
 			if diffHeaderPrefix(line) || isDiffMetaLine(line) {
 				state = StateDiffHeader
 				continue
 			}
-			// Nouveau hunk dans le même fichier
+			// New hunk in the same file
 			if isHunkMeta(line) {
 				state = StateHunkMeta
 				continue
 			}
-			// Ligne de suppression
+			// Deletion line
 			if strings.HasPrefix(line, "-") {
 				continue
 			}
-			// Ligne de contexte (préfixe espace) : conserver l'espace
+			// Context line (space prefix): keep the space
 			if len(line) > 0 && line[0] == ' ' {
 				result = append(result, line)
 				continue
 			}
-			// Ligne d'addition (préfixe +) : conserver le +
+			// Addition line (+ prefix): keep the +
 			if len(line) > 0 && line[0] == '+' {
 				result = append(result, line)
 				continue
 			}
-			// Lignes sans préfixe standard dans le corps : considéré
-			// comme une sortie du hunk (ex: "diff --combined" produit
-			// du contenu brut après le hunk).
+			// Lines without standard prefix in the body: considered
+			// as exiting the hunk (e.g., "diff --combined" produces
+			// raw content after the hunk).
 			if line == "" {
 				result = append(result, line)
 				continue
 			}
-			// Ligne sans préfixe reconnu → fin du hunk
+			// Line with unrecognized prefix → end of hunk
 			state = StateTextHunk
 			result = append(result, line)
 		}
@@ -314,7 +314,7 @@ func testNameForFile(filePath string) string {
 	// e.g., add.go -> TestAdd
 	base := strings.TrimSuffix(filePath, ".go")
 	base = strings.TrimSuffix(base, ".py")
-	// Capitalize first rune (replacement de strings.Title déprécié depuis Go 1.18)
+	// Capitalize first rune (replacement for the deprecated strings.Title since Go 1.18)
 	if len(base) > 0 {
 		runes := []rune(base)
 		runes[0] = unicode.ToUpper(runes[0])

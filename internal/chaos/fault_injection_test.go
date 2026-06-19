@@ -13,7 +13,7 @@ func TestFaultInjectedConvergence(t *testing.T) {
 	path := createTempDB(t)
 	defer os.Remove(path)
 
-	// Phase 1 : créer le schéma et insérer l'événement de test sans injection de pannes
+	// Phase 1: create schema and insert test event without fault injection
 	dbClean, err := storage.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestFaultInjectedConvergence(t *testing.T) {
 	}
 	dbClean.Close()
 
-	// Phase 2 : ouvrir avec le driver d'injection de pannes
+	// Phase 2: open with the fault injection driver
 	cfg := fault.FaultConfig{
 		ErrorRate:     0.1,
 		BusyRate:      0.05,
@@ -46,7 +46,7 @@ func TestFaultInjectedConvergence(t *testing.T) {
 	}
 	defer dbFault.Close()
 
-	// Tenter la réduction en présence de pannes, jusqu'à convergence
+	// Attempt reduction in the presence of faults, until convergence
 	var state string
 	for i := 0; i < 10; i++ {
 		dbFault.QueryRow(`SELECT state FROM graph_state WHERE node_id = 'main.A'`).Scan(&state)

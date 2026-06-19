@@ -39,7 +39,7 @@ type Server struct {
 	projectRoot    string
 }
 
-// securityHeaders ajoute les headers de sécurité sur toutes les réponses.
+// securityHeaders adds security headers to all responses.
 func securityHeaders(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -114,7 +114,7 @@ func main() {
 	// ── Router ─────────────────────────────────────────────────────────
 	mux := http.NewServeMux()
 
-	// Public endpoints (pas de auth, mais avec security headers)
+	// Public endpoints (no auth, but with security headers)
 	mux.HandleFunc("/", srv.dashboard)
 	mux.HandleFunc("/health", srv.health)
 	mux.HandleFunc("/dashboard/enriched", srv.dashboardEnriched)
@@ -152,12 +152,12 @@ func main() {
 	}
 }
 
-// authMiddleware — authentification Bearer token.
-// L'ordre dans le chain est: securityHeaders → LoggingMiddleware → authMiddleware → RateLimiterMiddleware → handler
-// On ne vérifie PAS le token pour /health (liveness).
+// authMiddleware handles Bearer token authentication.
+// The chain order is: securityHeaders → LoggingMiddleware → authMiddleware → RateLimiterMiddleware → handler
+// We do NOT verify the token for /health (liveness).
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// /health ne nécessite pas d'auth
+		// /health does not require auth
 		if r.URL.Path == "/health" {
 			next(w, r)
 			return
@@ -171,8 +171,8 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// handleRotate génère un nouveau token et le persiste dans token.txt.
-// Nécessite une authentification.
+// handleRotate generates a new token and persists it in token.txt.
+// Requires authentication.
 func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

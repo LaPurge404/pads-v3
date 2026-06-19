@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-// QueueEvent est l'unité soumise à la file d'attente.
+// QueueEvent is the unit submitted to the event queue.
 type QueueEvent struct {
 	ID        string            `json:"id"`
 	Type      string            `json:"type"`
@@ -21,18 +21,18 @@ type QueueEvent struct {
 	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
-// EventQueue est une file persistée (append‑only) thread‑safe.
-// Elle maintient un seul descripteur de fichier ouvert pour les lectures
-// et les écritures, évitant les ouvertures/fermetures répétées.
+// EventQueue is a thread-safe, persistent (append-only) queue.
+// It keeps a single file descriptor open for both reads and writes,
+// avoiding repeated open/close calls.
 //
-// L'offset de lecture est géré INTERNE par ReadFrom() et n'est jamais
-// modifié par Enqueue(). Cela garantit que les événements viennent d'être
-// écrits par Enqueue() sont immédiatement lisibles par ReadFrom().
+// The read offset is managed INTERNALLY by ReadFrom() and is never
+// modified by Enqueue(). This guarantees that events just written by
+// Enqueue() are immediately readable by ReadFrom().
 type EventQueue struct {
 	mu     sync.Mutex
 	file   *os.File
 	path   string
-	offset int64 // position de lecture suivante (en octets depuis le début du fichier)
+	offset int64 // next read position in bytes from the start of the file
 }
 
 func NewEventQueue(path string) (*EventQueue, error) {
@@ -43,7 +43,7 @@ func NewEventQueue(path string) (*EventQueue, error) {
 	return &EventQueue{file: f, path: path, offset: 0}, nil
 }
 
-// Close ferme le fichier sous-jacent.
+// Close closes the underlying file descriptor.
 func (q *EventQueue) Close() error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -53,9 +53,9 @@ func (q *EventQueue) Close() error {
 	return nil
 }
 
-// Enqueue écrit immédiatement l'événement sur disque.
-// O_APPEND guarantees atomic appends. L'offset de lecture n'est PAS modifié
-// (ReadFrom lit toujours depuis la position logique courante).
+// Enqueue writes the event to disk immediately.
+// O_APPEND guarantees atomic appends. The read offset is NOT modified
+// (ReadFrom always reads from the current logical position).
 func (q *EventQueue) Enqueue(e QueueEvent) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -72,8 +72,8 @@ func (q *EventQueue) Enqueue(e QueueEvent) error {
 	return q.file.Sync()
 }
 
-// LoadAll lit tous les événements de la file (crash recovery).
-// Ouvre un nouveau descripteur pour ne pas perturber l'offset de lecture.
+// LoadAll reads all events from the queue (crash recovery).
+// Opens a new file descriptor to avoid disturbing the current read offset.
 func (q *EventQueue) LoadAll() ([]QueueEvent, error) {
 	q.mu.Lock()
 	f, err := os.Open(q.path)
@@ -97,11 +97,10 @@ func (q *EventQueue) LoadAll() ([]QueueEvent, error) {
 	return events, scanner.Err()
 }
 
-// ReadFrom lit les événements à partir de la position offset actuelle.
-// Elle réutilise le descripteur existant. Après lecture, offset est avancé
-// à la fin du fichier pour que le prochain appel ne relise pas les données
-// déjà obtenues. Les doublons sont filtrés en amont par le worker via la
-// map processed.
+// ReadFrom reads events starting from the current offset position.
+// It reuses the existing file descriptor. After reading, offset is advanced
+// to EOF so the next call does not re-read already-obtained data.
+// Duplicates are filtered upstream by the worker using the processed map.
 func (q *EventQueue) ReadFrom() ([]QueueEvent, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -125,7 +124,7 @@ func (q *EventQueue) ReadFrom() ([]QueueEvent, error) {
 		}
 	}
 
-	// Avancer offset à la fin = fin de ce que le scanner a lu
+	// Advance offset to EOF = end of what the scanner just read
 	newOffset, err := q.file.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return events, err
@@ -134,14 +133,14 @@ func (q *EventQueue) ReadFrom() ([]QueueEvent, error) {
 	return events, scanner.Err()
 }
 
-// ReadOffset retourne l'offset de lecture actuel (utile pour le debugging).
+// ReadOffset returns the current read offset (useful for debugging).
 func (q *EventQueue) ReadOffset() int64 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.offset
 }
 
-// Size retourne la taille actuelle du fichier en octets.
+// Size returns the current file size in bytes.
 func (q *EventQueue) Size() (int64, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()

@@ -150,7 +150,7 @@ func (ec *EvolutionConnector) GetUCBStats() map[string]evolution.UCBArmStats {
 func generateID() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
-		// Fallback : pseudo-random basé sur le temps si rand échoue
+		// Fallback: pseudo-random based on time if rand fails
 		b[0] = byte(time.Now().UnixNano() & 0xff)
 		b[1] = byte((time.Now().UnixNano() >> 8) & 0xff)
 	}

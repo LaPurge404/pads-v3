@@ -28,20 +28,20 @@ func C() {}
 		t.Fatal(err)
 	}
 
-	// Vérification de la résolution directe
+	// Verify direct resolution
 	for _, name := range []string{"A", "B", "C"} {
 		if id := st.Resolve("main", name); id != "main."+name {
 			t.Errorf("expected main.%s, got %q", name, id)
 		}
 	}
 
-	// Symbole inexistant
+	// Nonexistent symbol
 	if id := st.Resolve("main", "D"); id != "" {
 		t.Errorf("expected empty for D, got %q", id)
 	}
 
-	// Vérification que les CALLS sont déjà résolus dans le graphe
-	// (le compilateur le fait directement, le résolveur n'a plus à les transformer)
+	// Verify that CALLS edges are already resolved in the graph
+	// (the compiler does this directly; the resolver does not need to transform them)
 	if !edgeExists(db, "main.A", "main.B") {
 		t.Error("missing edge main.A -> main.B (should be resolved by compiler)")
 	}
@@ -49,7 +49,7 @@ func C() {}
 		t.Error("missing edge main.A -> main.C (should be resolved by compiler)")
 	}
 
-	// Aucun edge unresolved ne doit subsister
+	// No unresolved edges should remain
 	var unresolved int
 	db.QueryRow(`SELECT COUNT(*) FROM edges WHERE relation = 'CALLS' AND target LIKE 'unresolved:%'`).Scan(&unresolved)
 	if unresolved != 0 {

@@ -1,21 +1,21 @@
 package evolution
 
-// Rewarder calcule la récompense associée à un cycle d'évolution.
-// oldStability : score de stabilité avant l'évolution
-// newStability : score de stabilité après l'évolution
-// accepted     : si le candidat a été accepté par l'orchestrateur
+// Rewarder computes the reward associated with an evolution cycle.
+// oldStability: stability score before evolution
+// newStability: stability score after evolution
+// accepted: whether the candidate was accepted by the orchestrator
 type Rewarder interface {
 	ComputeReward(oldStability, newStability float64, accepted bool) float64
 }
 
-// DeltaRewarder est un Rewarder simple : récompense = delta(stabilité).
-// Une amélioration donne une récompense positive, une dégradation une pénalité.
+// DeltaRewarder is a simple Rewarder: reward = delta(stability).
+// An improvement yields a positive reward, a degradation yields a penalty.
 type DeltaRewarder struct{}
 
 func (d DeltaRewarder) ComputeReward(oldStability, newStability float64, accepted bool) float64 {
 	delta := newStability - oldStability
-	// Si le candidat est rejeté malgré une amélioration, on ne donne pas de récompense
-	// (car la décision finale a été négative).
+	// If the candidate is rejected despite an improvement, no reward is given
+	// (because the final decision was negative).
 	if !accepted {
 		return 0
 	}

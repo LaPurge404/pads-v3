@@ -15,7 +15,7 @@ func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Requête avec token Bearer
+	// Request with Bearer token
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer test-token-abc123")
 	w := httptest.NewRecorder()
@@ -24,7 +24,7 @@ func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	// Deuxième requête avec le même token — doit passer (limite=2)
+	// Second request with the same token — should pass (limit=2)
 	w2 := httptest.NewRecorder()
 	handler(w2, req)
 	if w2.Code != http.StatusOK {
@@ -41,14 +41,14 @@ func TestRateLimiter_BlocksOverLimit(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer test-token-xyz")
 
-	// Première requête OK
+	// First request OK
 	w := httptest.NewRecorder()
 	handler(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("first request failed: got %d", w.Code)
 	}
 
-	// Deuxième requête bloquée (limite=1, déjà utilisé)
+	// Second request blocked (limit=1, already used)
 	w2 := httptest.NewRecorder()
 	handler(w2, req)
 	if w2.Code != http.StatusTooManyRequests {
@@ -62,7 +62,7 @@ func TestRateLimiter_RejectsWithoutToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Requête sans token — doit retourner 401 immédiatement (pas de quota consommé)
+	// Request without token — should return 401 immediately (no quota consumed)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	handler(w, req)
@@ -77,7 +77,7 @@ func TestRateLimiter_DifferentTokensIndependent(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Token A : première requête OK
+	// Token A: first request OK
 	reqA := httptest.NewRequest("GET", "/", nil)
 	reqA.Header.Set("Authorization", "Bearer token-A")
 	wA := httptest.NewRecorder()
@@ -86,14 +86,14 @@ func TestRateLimiter_DifferentTokensIndependent(t *testing.T) {
 		t.Fatalf("token-A first request: expected 200, got %d", wA.Code)
 	}
 
-	// Token A : deuxième requête bloquée (limite=1)
+	// Token A: second request blocked (limit=1)
 	wA2 := httptest.NewRecorder()
 	handler(wA2, reqA)
 	if wA2.Code != http.StatusTooManyRequests {
 		t.Fatalf("token-A second request: expected 429, got %d", wA2.Code)
 	}
 
-	// Token B : première requête OK (quota indépendant)
+	// Token B: first request OK (independent quota)
 	reqB := httptest.NewRequest("GET", "/", nil)
 	reqB.Header.Set("Authorization", "Bearer token-B")
 	wB := httptest.NewRecorder()
@@ -109,7 +109,7 @@ func TestRateLimiter_InvalidBearerFormat(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Format invalide (sans "Bearer ")
+	// Invalid format (without "Bearer ")
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "just-a-token")
 	w := httptest.NewRecorder()

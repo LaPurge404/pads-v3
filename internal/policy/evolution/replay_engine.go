@@ -61,7 +61,7 @@ func (r *ReplayEngine) Rebuild() SystemState {
 		state.Gate = gate.ExportState()
 		state.DetectorWindow = copySlice(detector.window)
 
-		// Calcul du score de stabilité = moyenne de la fenêtre du détecteur
+		// Stability score calculation = mean of the detector window
 		if len(state.DetectorWindow) > 0 {
 			sum := 0.0
 			for _, v := range state.DetectorWindow {

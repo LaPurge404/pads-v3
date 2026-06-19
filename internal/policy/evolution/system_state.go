@@ -14,12 +14,12 @@ type GateState struct {
 	MaxWindow      int
 }
 
-// SystemState représente l'état complet à un instant T.
+// SystemState represents the complete state at time T.
 type SystemState struct {
 	Bandit         BanditState
 	Gate           GateState
 	DetectorWindow []float64
 	Mode           Mode
 	Sequence       int
-	StabilityScore float64 // score de stabilité calculé après le dernier cycle
+	StabilityScore float64 // stability score computed after the last cycle
 }

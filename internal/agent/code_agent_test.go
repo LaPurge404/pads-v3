@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// TestTestNameForFile vérifie la génération de nom de test.
+// TestTestNameForFile verifies test name generation.
 func TestTestNameForFile(t *testing.T) {
 	tests := []struct {
 		input string
@@ -25,7 +25,7 @@ func TestTestNameForFile(t *testing.T) {
 	}
 }
 
-// TestTestNameForFileEmpty vérifie le cas d'un nom vide.
+// TestTestNameForFileEmpty verifies the empty name case.
 func TestTestNameForFileEmpty(t *testing.T) {
 	got := testNameForFile("")
 	if got != "Test" {
@@ -33,7 +33,7 @@ func TestTestNameForFileEmpty(t *testing.T) {
 	}
 }
 
-// TestDetectLanguage vérifie la détection du langage.
+// TestDetectLanguage verifies language detection.
 func TestDetectLanguage(t *testing.T) {
 	tests := []struct {
 		path string
@@ -52,17 +52,17 @@ func TestDetectLanguage(t *testing.T) {
 	}
 }
 
-// TestStripDiffMarkers vérifie le nettoyage des marqueurs diff.
+// TestStripDiffMarkers verifies diff marker cleaning.
 func TestStripDiffMarkers(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
 		want  string
 	}{
-		// Cas de base
+		// Basic case
 		{"simple text", "package main", "package main"},
 
-		// Diff complet standard
+		// Standard full diff
 		{
 			"full diff",
 			"diff --git a/foo.go b/foo.go\n" +
@@ -81,7 +81,7 @@ func TestStripDiffMarkers(t *testing.T) {
 				" func main() {}",
 		},
 
-		// Fichier vide (nouveau fichier)
+		// Empty file (new file)
 		{
 			"empty file diff",
 			"diff --git a/new.go b/new.go\n" +
@@ -95,7 +95,7 @@ func TestStripDiffMarkers(t *testing.T) {
 				"+func New() {}",
 		},
 
-		// Patch binaire (sans contenu utilisable)
+		// Binary patch (no usable content)
 		{
 			"binary diff",
 			"diff --git a/logo.png b/logo.png\n" +
@@ -103,7 +103,7 @@ func TestStripDiffMarkers(t *testing.T) {
 			"",
 		},
 
-		// Unicode dans le contenu
+		// Unicode content
 		{
 			"unicode content",
 			"--- a/emoji.go\n" +
@@ -114,7 +114,7 @@ func TestStripDiffMarkers(t *testing.T) {
 			"+const smiley = \"😀🎉👋\"\n",
 		},
 
-		// Noms de fichiers avec + (ex: c++, go++ test_name)
+		// Filenames with + (e.g. c++, go++ test_name)
 		{
 			"filename with plus",
 			"diff --git a/test++.go b/test++.go\n" +
@@ -155,7 +155,7 @@ func TestStripDiffMarkers(t *testing.T) {
 				"+",
 		},
 
-		// Lignes vides dans le diff
+		// Empty lines in diff
 		{
 			"empty lines in diff",
 			"--- a/main.go\n" +
@@ -163,24 +163,24 @@ func TestStripDiffMarkers(t *testing.T) {
 				"@@ -1,2 +1,3 @@\n" +
 				" package main\n" +
 				"+\n" +
-				"+",
+				"+\n",
 			" package main\n" +
 				"+\n" +
-				"+",
+				"+\n",
 		},
 
-		// Ancienne approche: suppression de lignes "-" (cas sans en-tête)
-		// Sans en-tête diff, le contenu n'est pas traité comme un diff,
-		// donc les lignes - et + sont passées telles quelles.
+		// Old approach: removal lines "-" (case without header)
+		// Without a diff header, the content is not treated as a diff,
+		// so - and + lines are passed through as-is.
 		{
 			"old style deletion",
 			"- removed line\n+ added line\n unchanged",
 			"- removed line\n+ added line\n unchanged",
 		},
 
-		// Ligne d'ajout dans un diff (sans @@ → pas de hunk)
-		// Le "+ new line" après l'en-tête est vu comme ligne normale,
-		// donc on ressort en StateTextHunk et on copie.
+		// Addition line in a diff (without @@ → no hunk)
+		// The "+ new line" after the header is seen as a normal line,
+		// so we exit in StateTextHunk and copy it.
 		{
 			"simple addition no hunk",
 			"--- a/foo.go\n" +
@@ -189,7 +189,7 @@ func TestStripDiffMarkers(t *testing.T) {
 			"+ new line",
 		},
 
-		// Ligne d'ajout dans un diff avec @@
+		// Addition line in a diff with @@
 		{
 			"simple addition with hunk",
 			"--- a/foo.go\n" +
@@ -209,7 +209,7 @@ func TestStripDiffMarkers(t *testing.T) {
 	}
 }
 
-// TestIsDiff vérifie la détection de format diff.
+// TestIsDiff verifies diff format detection.
 func TestIsDiff(t *testing.T) {
 	tests := []struct {
 		patch string
@@ -221,7 +221,7 @@ func TestIsDiff(t *testing.T) {
 		{"@@ -1,3 +1,4 @@", false},
 		{"func main() {}", false},
 		{"", false},
-		// Nouveaux cas: diff au milieu du texte
+		// New cases: diff in the middle of text
 		{"some text\n--- a/foo.go\n+++ b/foo.go", true},
 		{"some text\ndiff --git a/foo.go b/foo.go", true},
 	}
@@ -233,7 +233,7 @@ func TestIsDiff(t *testing.T) {
 	}
 }
 
-// TestStripDiffMarkersEmpty vérifie le cas d'un patch vide.
+// TestStripDiffMarkersEmpty verifies the empty patch case.
 func TestStripDiffMarkersEmpty(t *testing.T) {
 	got := stripDiffMarkers("")
 	if got != "" {
@@ -241,7 +241,7 @@ func TestStripDiffMarkersEmpty(t *testing.T) {
 	}
 }
 
-// TestStripDiffMarkersOnlyWhitespace vérifie le cas de whitespace seul.
+// TestStripDiffMarkersOnlyWhitespace verifies the whitespace-only case.
 func TestStripDiffMarkersOnlyWhitespace(t *testing.T) {
 	input := "   \n	\n"
 	got := stripDiffMarkers(input)
@@ -250,7 +250,7 @@ func TestStripDiffMarkersOnlyWhitespace(t *testing.T) {
 	}
 }
 
-// TestStripDiffMarkersContextPreserved vérifie que les lignes de contexte sont bien conservées.
+// TestStripDiffMarkersContextPreserved verifies that context lines are preserved.
 func TestStripDiffMarkersContextPreserved(t *testing.T) {
 	input := "--- a/main.go\n" +
 		"+++ b/main.go\n" +
@@ -268,14 +268,14 @@ func TestStripDiffMarkersContextPreserved(t *testing.T) {
 	}
 }
 
-// TestDirForFile vérifie l'extraction du répertoire.
+// TestDirForFile verifies directory extraction.
 func TestDirForFile(t *testing.T) {
 	tests := []struct {
 		path string
 		want string
 	}{
 		{"internal/agent/llm.go", "internal/agent"},
-		{"server.go", "."}, // pas de / → "."
+		{"server.go", "."}, // no / → "."
 		{"a/b/c.go", "a/b"},
 		{"pkg/util.go", "pkg"},
 	}
@@ -287,9 +287,9 @@ func TestDirForFile(t *testing.T) {
 	}
 }
 
-// TestBuildPrompt vérifie que buildPrompt retourne un CodePrompt complet.
+// TestBuildPrompt verifies that buildPrompt returns a complete CodePrompt.
 func TestBuildPrompt(t *testing.T) {
-	agent := NewCodeAgent(nil) // nil LLM → pas appelé dans ce test
+	agent := NewCodeAgent(nil) // nil LLM → not called in this test
 	prompt := agent.buildPrompt(
 		Task{Kind: TaskFixBroken, Target: "add.go", Goal: "fix nil check"},
 		Context{FilePath: "add.go"},
@@ -305,7 +305,7 @@ func TestBuildPrompt(t *testing.T) {
 	}
 }
 
-// TestBuildPlan vérifie que buildPlan génère un Plan avec les étapes.
+// TestBuildPlan verifies that buildPlan generates a Plan with the expected steps.
 func TestBuildPlan(t *testing.T) {
 	agent := NewCodeAgent(nil)
 	plan := agent.buildPlan(
@@ -327,6 +327,6 @@ func TestBuildPlan(t *testing.T) {
 	}
 }
 
-// Note: TestSolveWithMockLLM est commenté car le mock LLM retourne
-// une confidence de 0.50 qui est en dessous du seuil par défaut (0.60).
+// Note: TestSolveWithMockLLM is commented out because the mock LLM returns
+// a confidence of 0.50 which is below the default threshold of 0.60.
 // func TestSolveWithMockLLM(...) { ... }

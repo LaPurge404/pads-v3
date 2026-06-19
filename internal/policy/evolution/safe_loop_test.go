@@ -30,7 +30,7 @@ func TestSafeEvolutionLoopV3_Evolve(t *testing.T) {
 		t.Fatalf("unexpected result: accepted=%v stability=%.0f", accepted, loop.StabilityScore())
 	}
 
-	// Vérifier que l'événement a été stocké
+	// Verify that the event was stored
 	events, _ := es.LoadAll()
 	if len(events) == 0 {
 		t.Fatal("no event stored")

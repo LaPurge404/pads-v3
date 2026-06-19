@@ -23,7 +23,7 @@ func (d *AntiCollapseDetector) Add(score float64) {
 	}
 }
 
-// Variance calcule la variance de la fenêtre.
+// Variance computes the variance of the window.
 func (d *AntiCollapseDetector) Variance() float64 {
 	if len(d.window) < 2 {
 		return 0
@@ -37,7 +37,7 @@ func (d *AntiCollapseDetector) Variance() float64 {
 	return sumSquares / float64(len(d.window))
 }
 
-// StdDev retourne l'écart-type (racine carrée de la variance).
+// StdDev returns the standard deviation (square root of variance).
 func (d *AntiCollapseDetector) StdDev() float64 {
 	return math.Sqrt(d.Variance())
 }
@@ -53,12 +53,12 @@ func (d *AntiCollapseDetector) mean() float64 {
 	return sum / float64(len(d.window))
 }
 
-// IsStable vérifie que la variance est sous le seuil.
+// IsStable checks that the variance is below the threshold.
 func (d *AntiCollapseDetector) IsStable() bool {
 	return d.Variance() < d.varianceThreshold
 }
 
-// IsOscillating détecte un changement de signe de la pente, avec une amplitude minimale.
+// IsOscillating detects a sign change in the slope, with a minimum amplitude.
 func (d *AntiCollapseDetector) IsOscillating() bool {
 	if len(d.window) < 3 {
 		return false
@@ -66,7 +66,7 @@ func (d *AntiCollapseDetector) IsOscillating() bool {
 	for i := 2; i < len(d.window); i++ {
 		diff1 := d.window[i] - d.window[i-1]
 		diff2 := d.window[i-1] - d.window[i-2]
-		// Changement de signe ET amplitude significative (au moins 1% du score moyen)
+		// Sign change AND significant amplitude (at least 1% of the average score)
 		if (diff1*diff2 < 0) && math.Abs(diff1) > 0.01*d.mean() {
 			return true
 		}

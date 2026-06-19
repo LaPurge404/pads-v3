@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// TestWorkerOffsetBasedReading vérifie que ReadFrom ne relit pas les événements
-// déjà traités lors des appels précédents (l'offset est géré en interne).
+// TestWorkerOffsetBasedReading verifies that ReadFrom does not re-read events
+// already processed in previous calls (offset is managed internally).
 func TestWorkerOffsetBasedReading(t *testing.T) {
 	tmpDir := t.TempDir()
 	queuePath := filepath.Join(tmpDir, "test_queue.log")
@@ -17,7 +17,7 @@ func TestWorkerOffsetBasedReading(t *testing.T) {
 	}
 	defer queue.Close()
 
-	// Écrire 3 événements initiaux
+	// Write 3 initial events
 	for i := 0; i < 3; i++ {
 		if err := queue.Enqueue(QueueEvent{
 			ID:   "initial-" + string(rune('A'+i)),
@@ -27,13 +27,13 @@ func TestWorkerOffsetBasedReading(t *testing.T) {
 		}
 	}
 
-	// Première lecture : doit voir les 3 événements
+	// First read: should see all 3 events
 	events1, err := queue.ReadFrom()
 	if err != nil {
 		t.Fatalf("ReadFrom (1st call): %v", err)
 	}
 	if len(events1) != 3 {
-		t.Errorf("première lecture: attendu 3 événements, obtenu %d", len(events1))
+		t.Errorf("first read: expected 3 events, got %d", len(events1))
 	}
 
 	processed := make(map[string]bool)
@@ -41,16 +41,16 @@ func TestWorkerOffsetBasedReading(t *testing.T) {
 		processed[e.ID] = true
 	}
 
-	// Deuxième lecture (immédiatement après) : ne doit voir aucun nouvel événement
+	// Second read (immediately after): should see no new events
 	events2, err := queue.ReadFrom()
 	if err != nil {
 		t.Fatalf("ReadFrom (2nd call): %v", err)
 	}
 	if len(events2) != 0 {
-		t.Errorf("deuxième lecture (aucun nouvel événement): attendu 0, obtenu %d", len(events2))
+		t.Errorf("second read (no new events): expected 0, got %d", len(events2))
 	}
 
-	// Écrire 2 nouveaux événements
+	// Write 2 new events
 	for i := 0; i < 2; i++ {
 		if err := queue.Enqueue(QueueEvent{
 			ID:   "new-" + string(rune('X'+i)),
@@ -60,13 +60,13 @@ func TestWorkerOffsetBasedReading(t *testing.T) {
 		}
 	}
 
-	// Troisième lecture : doit voir les 2 nouveaux événements
+	// Third read: should see the 2 new events
 	events3, err := queue.ReadFrom()
 	if err != nil {
 		t.Fatalf("ReadFrom (3rd call): %v", err)
 	}
 	if len(events3) != 2 {
-		t.Errorf("troisième lecture (2 nouveaux): attendu 2, obtenu %d", len(events3))
+		t.Errorf("third read (2 new): expected 2, got %d", len(events3))
 	}
 
 	newEvents := 0
@@ -77,13 +77,13 @@ func TestWorkerOffsetBasedReading(t *testing.T) {
 		}
 	}
 	if newEvents != 2 {
-		t.Errorf("événements effectivement nouveaux: attendu 2, obtenu %d", newEvents)
+		t.Errorf("newly processed events: expected 2, got %d", newEvents)
 	}
 
-	t.Logf("événements traitées (total unique): %d", len(processed))
+	t.Logf("total unique events processed: %d", len(processed))
 }
 
-// TestWorkerReadFromEmptyQueue vérifie que ReadFrom fonctionne sur un fichier vide.
+// TestWorkerReadFromEmptyQueue verifies that ReadFrom works on an empty file.
 func TestWorkerReadFromEmptyQueue(t *testing.T) {
 	tmpDir := t.TempDir()
 	queuePath := filepath.Join(tmpDir, "empty_queue.log")
@@ -99,18 +99,18 @@ func TestWorkerReadFromEmptyQueue(t *testing.T) {
 		t.Fatalf("ReadFrom on empty queue: %v", err)
 	}
 	if len(events) != 0 {
-		t.Errorf("lecture file vide: attendu 0 événements, obtenu %d", len(events))
+		t.Errorf("read empty file: expected 0 events, got %d", len(events))
 	}
 }
 
-// TestWorkerProcessedMapDedup vérifie que la map processed dédouane bien les événements.
+// TestWorkerProcessedMapDedup verifies that the processed map deduplicates events.
 func TestWorkerProcessedMapDedup(t *testing.T) {
 	processed := make(map[string]bool)
 
 	events := []QueueEvent{
 		{ID: "evt-1", Type: "evolve"},
 		{ID: "evt-2", Type: "evolve"},
-		{ID: "evt-1", Type: "evolve"}, // doublon
+		{ID: "evt-1", Type: "evolve"}, // duplicate
 	}
 
 	processedCount := 0
@@ -122,18 +122,18 @@ func TestWorkerProcessedMapDedup(t *testing.T) {
 	}
 
 	if processedCount != 2 {
-		t.Errorf("processedCount: attendu 2, obtenu %d", processedCount)
+		t.Errorf("processedCount: expected 2, got %d", processedCount)
 	}
 	if len(processed) != 2 {
-		t.Errorf("taille map processed: attendu 2, obtenu %d", len(processed))
+		t.Errorf("processed map size: expected 2, got %d", len(processed))
 	}
 }
 
-// TestWorkerProcessedMapCleanup vérifie que cleanupProcessed bornela map processed.
+// TestWorkerProcessedMapCleanup verifies that cleanupProcessed bounds the processed map.
 func TestWorkerProcessedMapCleanup(t *testing.T) {
 	processed := make(map[string]bool)
 
-	// Simuler 2500 événements avec dédoublonnage
+	// Simulate 2500 events with deduplication
 	for i := 0; i < 2500; i++ {
 		id := string(rune(i))
 		if !processed[id] {
@@ -142,10 +142,10 @@ func TestWorkerProcessedMapCleanup(t *testing.T) {
 	}
 
 	if len(processed) != 2500 {
-		t.Errorf("dédupliqué: attendu 2500 événements, obtenu %d", len(processed))
+		t.Errorf("deduplicated: expected 2500 events, got %d", len(processed))
 	}
 
-	// Simuler cleanupWorker qui garde les 500 derniers
+	// Simulate cleanupWorker which keeps the last 500
 	const maxRetention = 500
 	cleaned := make(map[string]bool)
 	keys := make([]string, 0, len(processed))
@@ -160,14 +160,14 @@ func TestWorkerProcessedMapCleanup(t *testing.T) {
 		cleaned[k] = true
 	}
 	if len(cleaned) != maxRetention {
-		t.Errorf("après cleanup, map devrait avoir %d entrées, obtenu %d", maxRetention, len(cleaned))
+		t.Errorf("after cleanup, map should have %d entries, got %d", maxRetention, len(cleaned))
 	}
 
 	t.Logf("map size before cleanup: %d, after cleanup: %d (bounded)", len(processed), len(cleaned))
 }
 
-// TestEventQueueEnqueueAppendOnly vérifie qu'Enqueue utilise O_APPEND
-// (le fichier grossit, pas de troncature).
+// TestEventQueueEnqueueAppendOnly verifies that Enqueue uses O_APPEND
+// (the file grows, no truncation).
 func TestEventQueueEnqueueAppendOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	queuePath := filepath.Join(tmpDir, "append_only.log")
@@ -193,10 +193,10 @@ func TestEventQueueEnqueueAppendOnly(t *testing.T) {
 	}
 }
 
-// TestEventQueueSync vérifie que Enqueue retourne une erreur si le fichier
-// sous-jacent devient inaccessible (dossier inexistant).
+// TestEventQueueSync verifies that Enqueue returns an error if the underlying
+// file becomes inaccessible (nonexistent directory).
 func TestEventQueueSyncError(t *testing.T) {
-	// Créer un EventQueue, puis supprimer son fichier et essayer d'écrire
+	// Create an EventQueue, then delete its file and try to write
 	tmpDir := t.TempDir()
 	queuePath := filepath.Join(tmpDir, "sync_error.log")
 

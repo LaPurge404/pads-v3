@@ -26,7 +26,7 @@ func setupTestServer() (*httptest.Server, *evolution.EventQueue) {
 	worker := evolution.NewWorker(queue, loop, evolution.DeltaRewarder{})
 	go worker.Start()
 
-	// Simuler le serveur avec les handlers de l'API
+	// Simulate the server with the API handlers
 	mux := http.NewServeMux()
 	s := &server{queue: queue, worker: worker, authToken: "testtoken"}
 	mux.HandleFunc("/evolve", s.authMiddleware(s.enqueueEvolve))
@@ -55,7 +55,7 @@ func (s *server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *server) enqueueEvolve(w http.ResponseWriter, r *http.Request) {
-	// Même code que dans main.go
+	// Same code as in main.go
 	var req struct {
 		Candidate int     `json:"candidate"`
 		Current   int     `json:"current"`

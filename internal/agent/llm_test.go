@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TestOpenAIClientMock vérifie que sans clef API, le client retourne un mock.
+// TestOpenAIClientMock verifies that without an API key, the client returns a mock.
 func TestOpenAIClientMock(t *testing.T) {
-	// Clef bidon → mode mock
+	// Fake key → mock mode
 	client := NewOpenAIClient("gpt-4o-mini")
 	resp, err := client.GenerateCode(context.Background(), CodePrompt{
 		Task:     "Add a logging statement",
@@ -29,7 +29,7 @@ func TestOpenAIClientMock(t *testing.T) {
 	if len(resp.Warnings) == 0 {
 		t.Error("Warnings should contain mock mode notice")
 	}
-	// Le warning doit mentionner le mode mock
+	// The warning must mention mock mode
 	found := false
 	for _, w := range resp.Warnings {
 		if w == "Running in mock mode - set OPENAI_API_KEY" {
@@ -42,10 +42,10 @@ func TestOpenAIClientMock(t *testing.T) {
 	}
 }
 
-// TestNvidiaClientMock vérifie que sans clef NVIDIA_API_KEY,
-// le client Nvidia retourne un mock.
+// TestNvidiaClientMock verifies that without NVIDIA_API_KEY,
+// the Nvidia client returns a mock.
 func TestNvidiaClientMock(t *testing.T) {
-	// Pas de NVIDIA_API_KEY → mode mock
+	// No NVIDIA_API_KEY → mock mode
 	client := NewNvidiaClient("meta/llama-3.1-70b-instruct")
 	resp, err := client.GenerateCode(context.Background(), CodePrompt{
 		Task:     "Fix nil pointer dereference",
@@ -76,17 +76,17 @@ func TestNvidiaClientMock(t *testing.T) {
 	}
 }
 
-// TestNewDefaultLLMClient vérifie que le client par défaut est créé sans erreur.
+// TestNewDefaultLLMClient verifies that the default client is created without error.
 func TestNewDefaultLLMClient(t *testing.T) {
 	client := NewDefaultLLMClient()
 	if client == nil {
 		t.Fatal("NewDefaultLLMClient returned nil")
 	}
-	// Vérifier que le client implémente bien LLMClient
+	// Verify that the client implements LLMClient
 	var _ LLMClient = client
 }
 
-// TestCodePromptFields vérifie que les champs de CodePrompt sont bien utilisés.
+// TestCodePromptFields verifies that CodePrompt fields are used correctly.
 func TestCodePromptFields(t *testing.T) {
 	client := NewOpenAIClient("gpt-4o-mini")
 	prompt := CodePrompt{
@@ -100,7 +100,7 @@ func TestCodePromptFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Le mock remplit Explanation avec les infos du prompt
+	// The mock fills Explanation with the prompt info
 	if resp.Explanation == "" {
 		t.Error("Explanation should not be empty")
 	}

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// LoggingMiddleware enregistre chaque requête avec sa durée et son statut.
+// LoggingMiddleware logs each request with its duration and status.
 func LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

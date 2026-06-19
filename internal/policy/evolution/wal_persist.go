@@ -16,7 +16,7 @@ func NewWALStore(path string) *WALStore {
 }
 
 func (s *WALStore) Append(entry Entry) error {
-	// Créer le répertoire parent si nécessaire
+	// Create the parent directory if it doesn't exist
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err

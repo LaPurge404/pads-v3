@@ -56,7 +56,7 @@ func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, wei
 
 	l.sequence++
 
-	// Calcul du score de stabilité (moyenne de la fenêtre du détecteur)
+	// Stability score calculation (mean of the detector window)
 	var stabilityScore float64
 	if len(l.detector.window) > 0 {
 		sum := 0.0
@@ -85,7 +85,7 @@ func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, wei
 	return accepted, nil
 }
 
-// StabilityScore retourne la moyenne actuelle de la fenêtre du détecteur.
+// StabilityScore returns the current mean of the detector window.
 func (l *SafeEvolutionLoopV3) StabilityScore() float64 {
 	if len(l.detector.window) == 0 {
 		return 0

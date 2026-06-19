@@ -15,7 +15,7 @@ type Worker struct {
 	concurrency  int
 	processed    map[string]bool
 	processedOrd []string // ordered list for LRU-like cleanup
-	processedCnt int      // compteur pour nettoyage périodique
+	processedCnt int      // counter for periodic cleanup
 }
 
 const (
@@ -58,7 +58,7 @@ func (w *Worker) Start() {
 			w.processedOrd = append(w.processedOrd, e.ID)
 			w.processedCnt++
 
-			// Cleanup périodique de la map processed pour éviter une croissance infinie
+			// Periodic cleanup of the processed map to avoid unbounded growth
 			if w.processedCnt >= processedCleanupThreshold {
 				w.cleanupProcessed()
 				w.processedCnt = 0
@@ -73,25 +73,25 @@ func (w *Worker) IsRunning() bool {
 	return w.Running
 }
 
-// cleanupProcessed supprime les entrées anciennes de la map processed.
-// On garde les maxProcessedRetention dernières entrées pour maintenir la déduplication.
-// Les entrées plus anciennes sont supprimées (répétition possible en cas de crash restart,
-// ce qui est acceptable car le traitement est idempotent).
+// cleanupProcessed removes stale entries from the processed map.
+// We keep the last maxProcessedRetention entries to maintain deduplication.
+// Older entries are removed (re-processing may occur after crash restart,
+// which is acceptable as the processing is idempotent).
 func (w *Worker) cleanupProcessed() {
 	if len(w.processedOrd) <= maxProcessedRetention {
 		slog.Debug("worker: cleanup skipped, below threshold", "size", len(w.processed))
 		return
 	}
 
-	// Identifier les IDs à supprimer (les plus anciens)
+	// Identify IDs to remove (oldest ones)
 	toRemove := w.processedOrd[:len(w.processedOrd)-maxProcessedRetention]
 
-	// Supprimer de la map
+	// Remove from the map
 	for _, id := range toRemove {
 		delete(w.processed, id)
 	}
 
-	// Garder seulement les derniers
+	// Keep only the last entries
 	w.processedOrd = w.processedOrd[len(toRemove):]
 
 	slog.Info("worker: cleanup processed map", "removed", len(toRemove), "remaining", len(w.processedOrd))

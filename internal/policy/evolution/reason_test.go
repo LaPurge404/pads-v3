@@ -38,7 +38,7 @@ func TestConfidenceInResult(t *testing.T) {
 }
 
 func TestReasonInEvent(t *testing.T) {
-	// Construire une boucle et vérifier que la raison n'est pas vide
+	// Build a loop and verify that the reason is not empty
 	es := evolution.NewEventStore(t.TempDir() + "/ev.log")
 	wal := evolution.NewWAL("")
 	detector := evolution.NewAntiCollapseDetector(5, 10.0)

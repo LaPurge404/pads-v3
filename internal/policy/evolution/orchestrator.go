@@ -16,7 +16,7 @@ func (o *Orchestrator) Evaluate(a Candidate, b Candidate, weight float64) (Cycle
 	result := o.Evaluator.Evaluate(a, b, weight)
 
 	gateOk := o.Gate.Check(result.Score)
-	// Acceptation finale : l'évaluateur ET la porte de stabilité
+	// Final acceptance: evaluator AND stability gate
 	finalOk := result.Accepted && gateOk
 
 	return result, finalOk

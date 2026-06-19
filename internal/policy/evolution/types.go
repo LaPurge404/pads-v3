@@ -6,11 +6,11 @@ type Candidate struct {
 
 type CycleResult struct {
 	Score      int
-	Confidence float64 // niveau de confiance dans l'évaluation (0-1)
+	Confidence float64 // confidence level in the evaluation (0-1)
 	Accepted   bool
 }
 
-// Mode utilisé par le Controller
+// Mode used by the Controller
 type Mode string
 
 const (

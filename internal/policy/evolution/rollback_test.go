@@ -31,6 +31,6 @@ func TestRollbackManager_RollbackWhenOscillating(t *testing.T) {
 	if !rolledBack {
 		t.Fatal("expected rollback")
 	}
-	// entry peut être nil car WAL vide, mais le rollback doit être signalé
+	// entry may be nil because WAL is empty, but the rollback must be signalled
 	_ = entry
 }

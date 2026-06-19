@@ -17,7 +17,7 @@ func NewBandit() *Bandit {
 	}
 }
 
-// NewBanditWithSeed crée un bandit reproductible (indispensable pour le replay).
+// NewBanditWithSeed creates a reproducible bandit (essential for replay).
 func NewBanditWithSeed(seed int64) *Bandit {
 	return &Bandit{
 		arms: make(map[string]float64),
@@ -37,7 +37,7 @@ func (b *Bandit) Select() string {
 	if len(b.arms) == 0 {
 		return ""
 	}
-	// Choix purement aléatoire pour l'exploration (seedé donc déterministe)
+	// Purely random choice for exploration (seeded, thus deterministic)
 	keys := make([]string, 0, len(b.arms))
 	for k := range b.arms {
 		keys = append(keys, k)

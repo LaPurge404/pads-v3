@@ -9,8 +9,8 @@ import (
 	"pads-v3/internal/storage"
 )
 
-// TestResolveCallsNoMatch vérifie que ResolveCalls ne crash pas
-// quand un appel est unresolved et qu'aucune définition correspondante n'existe.
+// TestResolveCallsNoMatch verifies that ResolveCalls does not panic
+// when a call is unresolved and no matching definition exists.
 func TestResolveCallsNoMatch(t *testing.T) {
 	db, err := storage.Open(":memory:")
 	if err != nil {
@@ -20,7 +20,7 @@ func TestResolveCallsNoMatch(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.go")
-	// A() appelle B() qui n'est pas définie → edge unresolved
+	// A() calls B() which is not defined → unresolved edge
 	src := `package main
 
 func A() {
@@ -32,14 +32,14 @@ func A() {
 		t.Fatalf("IngestFile: %v", err)
 	}
 
-	// Vérifier que l'edge unresolved existe
+	// Verify that the unresolved edge exists
 	var before int
 	db.QueryRow(`SELECT COUNT(*) FROM edges WHERE relation = 'CALLS' AND target LIKE 'unresolved:%'`).Scan(&before)
 	if before == 0 {
 		t.Fatal("expected unresolved edge after ingest, got 0")
 	}
 
-	// ResolveCalls ne trouve pas B → l'edge reste unresolved
+	// ResolveCalls does not find B → edge stays unresolved
 	n, err := ResolveCalls(db)
 	if err != nil {
 		t.Fatalf("ResolveCalls: %v", err)
@@ -55,8 +55,8 @@ func A() {
 	}
 }
 
-// TestResolveCallsWithMatch vérifie que ResolveCalls résout
-// un appel unresolved quand une définition correspondante existe.
+// TestResolveCallsWithMatch verifies that ResolveCalls resolves
+// an unresolved call when a matching definition exists.
 func TestResolveCallsWithMatch(t *testing.T) {
 	db, err := storage.Open(":memory:")
 	if err != nil {
@@ -68,14 +68,14 @@ func TestResolveCallsWithMatch(t *testing.T) {
 	mainFile := filepath.Join(tmpDir, "main.go")
 	utilFile := filepath.Join(tmpDir, "util.go")
 
-	// main.go : appelle helper()
+	// main.go: calls helper()
 	os.WriteFile(mainFile, []byte(`package main
 
 func main() {
 	helper()
 }
 `), 0644)
-	// util.go : définit helper()
+	// util.go: defines helper()
 	os.WriteFile(utilFile, []byte(`package main
 
 func helper() {}
@@ -96,21 +96,21 @@ func helper() {}
 		t.Fatalf("ResolveCalls: %v", err)
 	}
 
-	// helper a été défini dans le même package → devrait être résolu
+	// helper was defined in the same package → should be resolved
 	if n < 1 {
-		t.Logf("ResolveCalls a résolu %d edges (peut être 0 si le resolver ne trouve pas helper dans main)", n)
+		t.Logf("ResolveCalls resolved %d edges (may be 0 if resolver doesn't find helper in main)", n)
 	}
 
-	// L'edge unresolved devrait avoir disparu (ou été réduit)
+	// The unresolved edge should be gone (or reduced)
 	var unresolvedAfter int
 	db.QueryRow(`SELECT COUNT(*) FROM edges WHERE relation = 'CALLS' AND target LIKE 'unresolved:%'`).Scan(&unresolvedAfter)
 	if unresolvedAfter >= unresolvedBefore {
-		t.Errorf("unresolved edges non diminuées: avant=%d, après=%d", unresolvedBefore, unresolvedAfter)
+		t.Errorf("unresolved edges not reduced: before=%d, after=%d", unresolvedBefore, unresolvedAfter)
 	}
 }
 
-// TestResolveCallsEmpty vérifie que ResolveCalls ne crash pas
-// sur une base vide.
+// TestResolveCallsEmpty verifies that ResolveCalls does not panic
+// on an empty database.
 func TestResolveCallsEmpty(t *testing.T) {
 	db, err := storage.Open(":memory:")
 	if err != nil {
@@ -120,9 +120,9 @@ func TestResolveCallsEmpty(t *testing.T) {
 
 	n, err := ResolveCalls(db)
 	if err != nil {
-		t.Fatalf("ResolveCalls sur base vide: %v", err)
+		t.Fatalf("ResolveCalls on empty DB: %v", err)
 	}
 	if n != 0 {
-		t.Errorf("expected 0 resolved sur base vide, got %d", n)
+		t.Errorf("expected 0 resolved on empty DB, got %d", n)
 	}
 }

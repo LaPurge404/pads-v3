@@ -5,13 +5,13 @@ import "math"
 type StabilityGate struct {
 	threshold         float64
 	varianceThreshold float64
-	detector          *AntiCollapseDetector // toujours non nil après construction
+	detector          *AntiCollapseDetector // always non-nil after construction
 	adaptiveFactor    float64
 	maxWindow         int
 	longWindow        []float64
 }
 
-// NewStabilityGateWithDetector crée un gate avec un détecteur injecté (obligatoire).
+// NewStabilityGateWithDetector creates a gate with an injected detector (required).
 func NewStabilityGateWithDetector(detector *AntiCollapseDetector) *StabilityGate {
 	return &StabilityGate{
 		threshold:         0.5,
@@ -23,12 +23,12 @@ func NewStabilityGateWithDetector(detector *AntiCollapseDetector) *StabilityGate
 	}
 }
 
-// NewStabilityGate crée un gate avec un détecteur par défaut (usage standard).
+// NewStabilityGate creates a gate with a default detector (standard usage).
 func NewStabilityGate() *StabilityGate {
 	return NewStabilityGateWithDetector(NewAntiCollapseDetector(5, 10.0))
 }
 
-// NewStabilityGateV2 permet de paramétrer le gate.
+// NewStabilityGateV2 allows configuring the gate.
 func NewStabilityGateV2(threshold float64, windowSize int, varianceThreshold float64) *StabilityGate {
 	detector := NewAntiCollapseDetector(windowSize, varianceThreshold)
 	return &StabilityGate{
@@ -61,7 +61,7 @@ func (g *StabilityGate) Check(score int) bool {
 	return float64(score) >= dynamicThreshold && g.detector.IsStable()
 }
 
-// ExportState capture l'état interne pour la reconstruction.
+// ExportState captures the internal state for reconstruction.
 func (g *StabilityGate) ExportState() GateState {
 	windowCopy := make([]float64, len(g.longWindow))
 	copy(windowCopy, g.longWindow)
@@ -77,7 +77,7 @@ func (g *StabilityGate) ExportState() GateState {
 	}
 }
 
-// ImportState restaure l'état interne (pour le replay).
+// ImportState restores the internal state (for replay).
 func (g *StabilityGate) ImportState(state GateState) {
 	g.threshold = state.Threshold
 	g.varianceThreshold = state.VarianceThresh
@@ -90,7 +90,7 @@ func (g *StabilityGate) ImportState(state GateState) {
 	copy(g.detector.window, state.DetectorWindow)
 }
 
-// --- utilitaires mathématiques (purs) ---
+// --- mathematical utilities (pure) ---
 func average(data []float64) float64 {
 	sum := 0.0
 	for _, v := range data {

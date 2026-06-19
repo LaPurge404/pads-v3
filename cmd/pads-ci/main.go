@@ -30,11 +30,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 1. Score candidat = ratio de tests réussis (normalisé 0-100)
+	// 1. Candidate score = ratio of passed tests (normalized 0-100)
 	candidateScore := getTestScore()
 	slog.Info("score candidat calculé", "score", candidateScore)
 
-	// 2. Score courant = StabilityScore de l'état système
+	// 2. Current score = StabilityScore of the system state
 	currentScore, err := getCurrentStability(*apiURL, *token)
 	if err != nil {
 		slog.Warn("impossible de récupérer l'état, utilisation de 0", "error", err)
@@ -42,7 +42,7 @@ func main() {
 	}
 	slog.Info("score de stabilité courant", "score", currentScore)
 
-	// 3. Soumettre l'évolution
+	// 3. Submit the evolution
 	resp, err := postEvolve(*apiURL, *token, int(candidateScore), int(currentScore), 1.0, "stable")
 	if err != nil {
 		slog.Error("échec de la soumission", "error", err)
@@ -50,7 +50,7 @@ func main() {
 	}
 	slog.Info("évolution soumise", "id", resp["id"])
 
-	// 4. Attendre le traitement et récupérer le nouveau score de stabilité
+	// 4. Wait for processing and retrieve the new stability score
 	newScore, err := waitForNewStability(*apiURL, *token)
 	if err != nil {
 		slog.Error("timeout attente worker", "error", err)
@@ -58,7 +58,7 @@ func main() {
 	}
 	slog.Info("nouveau score de stabilité", "score", newScore)
 
-	// 5. Décision
+	// 5. Decision
 	if newScore > currentScore {
 		fmt.Println("✅ Stabilité améliorée, commit accepté.")
 		os.Exit(0)
@@ -67,7 +67,7 @@ func main() {
 	os.Exit(1)
 }
 
-// getTestScore exécute go test et calcule le ratio (passés / total) * 100
+// getTestScore runs go test and computes the ratio (passed / total) * 100
 func getTestScore() float64 {
 	cmd := exec.Command("go", "test", "./...", "-count=1")
 	output, _ := cmd.CombinedOutput()

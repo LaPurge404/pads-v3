@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestResultSummary vérifie le formatage du résumé.
+// TestResultSummary verifies summary formatting.
 func TestResultSummary(t *testing.T) {
 	r := Result{
 		TestsPassed:  38,
@@ -27,9 +27,9 @@ func TestResultSummary(t *testing.T) {
 	}
 }
 
-// TestExtractCoverage vérifie le parsing de la sortie de go test -cover.
-// Ne couvre PAS le format "total: ... XX%" (go tool cover -func) car
-// la fonction analyze.go utilise "go test -cover" qui formatte différemment.
+// TestExtractCoverage verifies parsing of go test -cover output.
+// Does NOT cover the "total: ... XX%" format (go tool cover -func) because
+// analyze.go uses "go test -cover" which formats differently.
 func TestExtractCoverage(t *testing.T) {
 	tests := []struct {
 		output string

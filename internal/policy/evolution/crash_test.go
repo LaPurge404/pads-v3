@@ -22,7 +22,7 @@ func TestWorkerCrashRecovery(t *testing.T) {
 	worker := evolution.NewWorker(queue, loop, evolution.DeltaRewarder{})
 	go worker.Start()
 
-	// Ajouter un événement
+	// Add an event
 	queue.Enqueue(evolution.QueueEvent{
 		ID:        "1",
 		Type:      "evolve",
@@ -33,23 +33,23 @@ func TestWorkerCrashRecovery(t *testing.T) {
 	})
 	time.Sleep(100 * time.Millisecond)
 
-	// Simuler un crash en arrêtant le worker
+	// Simulate a crash by stopping the worker
 	worker.Running = false
 	time.Sleep(100 * time.Millisecond)
 
-	// L'état doit avoir traité l'événement avant le crash
+	// State must have processed the event before the crash
 	events, _ := queue.LoadAll()
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
 
-	// Recréer un nouveau worker (reprise)
+	// Recreate a new worker (recovery)
 	worker2 := evolution.NewWorker(queue, loop, evolution.DeltaRewarder{})
 	go worker2.Start()
 	time.Sleep(100 * time.Millisecond)
 
-	// Vérifier que l'état est toujours cohérent (pas de double traitement grâce à l'idempotence)
-	// Ici on vérifie simplement que le replay donne la même séquence
+	// Verify that state is still consistent (no double-processing thanks to idempotence)
+	// Here we simply verify that replay gives the same sequence
 	engine := evolution.NewReplayEngine(convertQueueToEvents(events))
 	state := engine.Rebuild()
 	if state.Sequence != 1 {

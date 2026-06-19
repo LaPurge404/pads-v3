@@ -15,7 +15,7 @@ type Certifier struct {
 	Snapshot       ci.CacheSnapshot
 }
 
-// Certify re-exécute le WAL, compare les hashes et génère un certificat.
+// Certify re-executes the WAL, compares hashes, and generates a certificate.
 func (c *Certifier) Certify(walPath string) (*Certificate, error) {
 	// 1. Compute WAL hash
 	walHash, err := computeFileHash(walPath)
