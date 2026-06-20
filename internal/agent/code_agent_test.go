@@ -1,7 +1,13 @@
 package agent
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
 	"testing"
+
+	"pads-v3/internal/storage"
 )
 
 // TestTestNameForFile verifies test name generation.
@@ -324,6 +330,240 @@ func TestBuildPlan(t *testing.T) {
 	}
 	if plan.Steps[0].Target != "add.go" {
 		t.Errorf("first step target = %q, want %q", plan.Steps[0].Target, "add.go")
+	}
+}
+
+// TestBuildPromptWithSourceContent verifies buildPrompt includes source content.
+func TestBuildPromptWithSourceContent(t *testing.T) {
+	agent := NewCodeAgent(nil)
+	prompt := agent.buildPrompt(
+		Task{Kind: TaskFixBroken, Target: "add.go", Goal: "fix nil check"},
+		Context{
+			FilePath:      "add.go",
+			SourceContent: "package main\n\nfunc add(a, b int) int { return a + b }",
+		},
+	)
+	if !strings.Contains(prompt.Context, "Target source") {
+		t.Error("prompt.Context should contain source content marker")
+	}
+	if !strings.Contains(prompt.Context, "func add") {
+		t.Error("prompt.Context should contain the actual source content")
+	}
+}
+
+// TestBuildPromptWithL2Events verifies buildPrompt includes L2 events.
+func TestBuildPromptWithL2Events(t *testing.T) {
+	agent := NewCodeAgent(nil)
+	prompt := agent.buildPrompt(
+		Task{Kind: TaskFixBroken, Target: "add.go", Goal: "fix nil check"},
+		Context{
+			FilePath: "add.go",
+			L2Events: []storage.Event{
+				{EventType: "build_failure", Payload: "compilation error at line 5"},
+				{EventType: "test_failure", Payload: "TestAdd failed: expected 3, got 2"},
+			},
+		},
+	)
+	if !strings.Contains(prompt.Context, "Recent events") {
+		t.Error("prompt.Context should contain 'Recent events'")
+	}
+	if !strings.Contains(prompt.Context, "build_failure") {
+		t.Error("prompt.Context should contain event type 'build_failure'")
+	}
+	if !strings.Contains(prompt.Context, "test_failure") {
+		t.Error("prompt.Context should contain event type 'test_failure'")
+	}
+}
+
+// TestBuildPromptWithoutSourceContentOrEvents verifies buildPrompt when context is minimal.
+func TestBuildPromptWithoutSourceContentOrEvents(t *testing.T) {
+	agent := NewCodeAgent(nil)
+	prompt := agent.buildPrompt(
+		Task{Kind: TaskFixBroken, Target: "util.py", Goal: "add logging"},
+		Context{FilePath: "util.py"},
+	)
+	if prompt.Language != "python" {
+		t.Errorf("prompt.Language = %q, want %q", prompt.Language, "python")
+	}
+	// FilePath contributes "File: util.py\n" to context.
+	if !strings.Contains(prompt.Context, "File: util.py") {
+		t.Errorf("prompt.Context = %q, want to contain file path", prompt.Context)
+	}
+}
+
+// TestBuildPromptWithUnknownLanguage verifies language detection falls back to unknown.
+func TestBuildPromptWithUnknownLanguage(t *testing.T) {
+	agent := NewCodeAgent(nil)
+	prompt := agent.buildPrompt(
+		Task{Kind: TaskFixBroken, Target: "Makefile", Goal: "fix target"},
+		Context{},
+	)
+	if prompt.Language != "unknown" {
+		t.Errorf("prompt.Language = %q, want %q", prompt.Language, "unknown")
+	}
+}
+
+// mockLLM is a test double that returns configured responses.
+type mockLLM struct {
+	resp   *CodeResponse
+	respErr error
+}
+
+func (m *mockLLM) GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
+	if m.respErr != nil {
+		return nil, m.respErr
+	}
+	return m.resp, nil
+}
+
+// TestSolveWithMockLLMSuccess verifies Solve succeeds when mock LLM returns high confidence.
+func TestSolveWithMockLLMSuccess(t *testing.T) {
+	mock := &mockLLM{
+		resp: &CodeResponse{
+			Patch:       "func add(a, b int) int { return a + b }\n",
+			Explanation: "mock fix",
+			Confidence:  0.85,
+		},
+	}
+	agent := NewCodeAgent(mock)
+	task := Task{Kind: TaskFixBroken, Target: "add.go", Goal: "fix nil check"}
+	ctx := Context{FilePath: "add.go"}
+
+	plan, err := agent.Solve(task, ctx)
+	if err != nil {
+		t.Fatalf("Solve() unexpected error: %v", err)
+	}
+	if len(plan.Steps) == 0 {
+		t.Error("plan should have at least one step")
+	}
+}
+
+// TestSolveWithLowConfidence verifies Solve returns an error when confidence is below threshold.
+func TestSolveWithLowConfidence(t *testing.T) {
+	mock := &mockLLM{
+		resp: &CodeResponse{
+			Patch:       "func add(a, b int) int { return a + b }\n",
+			Explanation: "low confidence fix",
+			Confidence:  0.3, // below 0.6 threshold
+		},
+	}
+	agent := NewCodeAgent(mock)
+	task := Task{Kind: TaskFixBroken, Target: "add.go", Goal: "fix nil check"}
+	ctx := Context{FilePath: "add.go"}
+
+	_, err := agent.Solve(task, ctx)
+	if err == nil {
+		t.Fatal("Solve() expected error for low confidence, got nil")
+	}
+	if !strings.Contains(err.Error(), "low confidence") {
+		t.Errorf("error = %q, want to contain 'low confidence'", err.Error())
+	}
+}
+
+// TestSolveWithLLMError verifies Solve propagates LLM errors.
+func TestSolveWithLLMError(t *testing.T) {
+	mock := &mockLLM{
+		respErr: fmt.Errorf("connection refused"),
+	}
+	agent := NewCodeAgent(mock)
+	task := Task{Kind: TaskFixBroken, Target: "add.go", Goal: "fix nil check"}
+	ctx := Context{FilePath: "add.go"}
+
+	_, err := agent.Solve(task, ctx)
+	if err == nil {
+		t.Fatal("Solve() expected error for LLM failure, got nil")
+	}
+}
+
+// TestEnrichWithExistingFile verifies Enrich populates SourceContent from an existing file.
+func TestEnrichWithExistingFile(t *testing.T) {
+	f, err := os.CreateTemp("", "enrichtest_*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString("package main\n\nfunc add(a, b int) int { return a + b }\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	ctx := &Context{}
+	ctx.Enrich(f.Name(), 50)
+	if ctx.SourceContent == "" {
+		t.Error("Enrich with existing file should populate SourceContent")
+	}
+	if !strings.Contains(ctx.SourceContent, "func add") {
+		t.Error("SourceContent should contain the file content")
+	}
+}
+
+// TestEnrichWithNonexistentFile verifies Enrich does not panic for a missing file.
+func TestEnrichWithNonexistentFile(t *testing.T) {
+	ctx := &Context{}
+	// Must not panic.
+	ctx.Enrich("/nonexistent/path/to/file.go", 50)
+	if ctx.SourceContent != "" {
+		t.Errorf("SourceContent = %q, want empty string for nonexistent file", ctx.SourceContent)
+	}
+}
+
+// TestEnrichWithLineLimit verifies Enrich respects the maxLines limit.
+func TestEnrichWithLineLimit(t *testing.T) {
+	f, err := os.CreateTemp("", "enrichtest_*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	// Write 10 lines.
+	content := strings.Repeat("line\n", 10)
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	ctx := &Context{}
+	ctx.Enrich(f.Name(), 3)
+	lines := strings.Split(ctx.SourceContent, "\n")
+	if len(lines)-1 > 3 { // -1 because final \n creates empty element
+		t.Errorf("SourceContent has %d lines, want at most 3", len(lines)-1)
+	}
+}
+
+// TestEnrichWithSemMemNil verifies Enrich does not panic when SemMem is nil.
+func TestEnrichWithSemMemNil(t *testing.T) {
+	f, err := os.CreateTemp("", "enrichtest_*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString("package main\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	ctx := &Context{SemMem: nil}
+	// Must not panic.
+	ctx.Enrich(f.Name(), 50)
+	// SourceContent should be populated since SemMem is nil but file exists.
+	if ctx.SourceContent == "" {
+		t.Error("Enrich with nil SemMem should still populate SourceContent from file")
+	}
+}
+
+// TestSolveRejectsUnsupportedTask verifies Solve returns an error for unsupported task kinds.
+func TestSolveRejectsUnsupportedTask(t *testing.T) {
+	mock := &mockLLM{}
+	agent := NewCodeAgent(mock)
+	// Only TaskFixBroken is accepted; use an unsupported value.
+	task := Task{Kind: TaskKind("some_other_kind"), Target: "add.go", Goal: "some task"}
+	ctx := Context{FilePath: "add.go"}
+
+	_, err := agent.Solve(task, ctx)
+	if err == nil {
+		t.Fatal("Solve() expected error for unsupported TaskKind, got nil")
+	}
+	if !strings.Contains(err.Error(), "TaskFixBroken") {
+		t.Errorf("error = %q, want to mention TaskFixBroken", err.Error())
 	}
 }
 
