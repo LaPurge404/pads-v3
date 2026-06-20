@@ -229,7 +229,7 @@ func (c *OpenAIClient) mockResponse(prompt CodePrompt) (*CodeResponse, error) {
 	return &CodeResponse{
 		Patch:       "// Mock: set OPENAI_API_KEY to enable real LLM calls",
 		Explanation: fmt.Sprintf("Mock response for task: %s on %s", prompt.Task, prompt.FilePath),
-		Confidence:  0.5,
+		Confidence:  0.8,
 		Warnings:    []string{"Running in mock mode - set OPENAI_API_KEY"},
 	}, nil
 }
@@ -353,7 +353,7 @@ func (c *ClaudeClient) mockResponse(prompt CodePrompt) *CodeResponse {
 	return &CodeResponse{
 		Patch:       "// Mock: set ANTHROPIC_API_KEY to enable real LLM calls",
 		Explanation: fmt.Sprintf("Mock response for task: %s on %s", prompt.Task, prompt.FilePath),
-		Confidence:  0.5,
+		Confidence:  0.8,
 		Warnings:    []string{"Running in mock mode - set ANTHROPIC_API_KEY"},
 	}
 }
@@ -564,7 +564,7 @@ func (c *NvidiaClient) mockResponse(prompt CodePrompt) (*CodeResponse, error) {
 	return &CodeResponse{
 		Patch:       "// Mock: set NVIDIA_API_KEY to enable real LLM calls",
 		Explanation: fmt.Sprintf("Mock response for task: %s on %s", prompt.Task, prompt.FilePath),
-		Confidence:  0.5,
+		Confidence:  0.8,
 		Warnings:    []string{"Running in mock mode - set NVIDIA_API_KEY"},
 	}, nil
 }

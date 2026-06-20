@@ -54,6 +54,7 @@ The token can be supplied via the `PADS_TOKEN` environment variable, a `token.tx
 | Method | URL | Description | Example `curl` (with token) | Expected response |
 |--------|-----|-------------|-----------------------------|-------------------|
 | `GET` | `/health` | Liveness probe – returns a JSON `HealthChecker` with fields `db`, `wal`, `semantic_memory`, `worker`, and optionally `pool` and `autonomous`. | `curl -s http://127.0.0.1:8080/health` | JSON, e.g. `{"db":true,"wal":true,"semantic_memory":true,"worker":true}` |
+| `GET` | `/metrics` | Prometheus metrics endpoint. **Public** (no auth required). Returns counters `evolution_cycles_total`, `ucb_updates_total`, `sandbox_runs_total`, `autonomous_cycles_total`, `worker_errors_total`. | `curl -s http://127.0.0.1:8080/metrics` | Prometheus text exposition format |
 | `GET` | `/state` | Returns the full system state derived from all stored events **by rebuilding** with `ReplayEngine.Rebuild()`. | `curl -s -H "Authorization: Bearer *** http://127.0.0.1:8080/state"` | JSON serialization of `SystemState` (see `system_state.go`); e.g. a typical payload looks like `{"bandit":{},"gate":{},"detector_window":[],"mode":"stable","sequence":0,"stability_score":0,"trend":0,"reason":""}` |
 | `POST` | `/evolve` | Submits a new evolution request. Body must contain `candidate`, `current`, `weight`, `mode`. The server validates, creates a `QueueEvent`, and enqueues it. | ```bash\ncurl -s -X POST http://127.0.0.1:8080/evolve \\\n  -H "Authorization: Bearer ***" \\\n  -H "Content-Type: application/json" \\\n  -d '{"candidate":12,"current":7,"weight":1.5,"mode":"stable"}'\n``` | `{"status":"queued","id":"<generated-id>"}` |
 | `GET` | `/select` | Returns the arm chosen by the bandit selector for the next exploration step. | `curl -s -H "Authorization: Bearer *** http://127.0.0.1:8080/select"` | `{"arm":"stable"}` (or `"bandit"`/`"locked"` depending on selector state) |
@@ -85,7 +86,7 @@ The token can be supplied via the `PADS_TOKEN` environment variable, a `token.tx
 
 * **Rate limiting** – a token-bucket limiter (`evolution.NewRateLimiter(10, 1*time.Minute)`) allows **10 requests per minute** per distinct Bearer token. A background goroutine cleans up stale/inactive tokens every 5 minutes and enforces a max of 1000 distinct tokens (LRU eviction). Exceeding the quota returns HTTP 429 with a `Retry-After` header.
 
-* **Middleware chain order** – Auth is checked **before** rate limiting: `securityHeaders → LoggingMiddleware → authMiddleware → rateLimiterMiddleware → handler`. This ensures unauthenticated requests do not consume rate limit quota.
+* **Middleware chain order** – Rate limiting is checked **before** auth (rate limiter is closest to the handler): `securityHeaders → rateLimiterMiddleware → authMiddleware → LoggingMiddleware → handler`. This means unauthenticated requests also consume rate limit quota — a deliberate choice to protect against unauthenticated DoS floods. The `/metrics` endpoint is public (no auth) but retains security headers.
 
 * **HTTP security headers** – Every response includes `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `X-Request-ID`.
 

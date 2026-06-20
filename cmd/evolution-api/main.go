@@ -151,8 +151,10 @@ func main() {
 	mux.HandleFunc("/", srv.dashboard)
 	mux.HandleFunc("/health", srv.health)
 	mux.HandleFunc("/dashboard/enriched", srv.dashboardEnriched)
+	// /metrics is public (localhost only, no sensitive data exposed)
+	mux.HandleFunc("/metrics", securityHeaders(metrics.PrometheusHandler()))
 
-	// Protected endpoints: securityHeaders → auth → rate limit → logging → handler
+	// Protected endpoints: securityHeaders → rateLimiter → auth → logging → handler
 	protected := func(path string, h http.HandlerFunc) {
 		chain := securityHeaders(h)
 		chain = srv.rl.Middleware(chain)
@@ -172,9 +174,6 @@ func main() {
 	protected("/autonomous/toggle", srv.handleAutonomousToggle)
 	protected("/autonomous/run", srv.handleAutonomousRun)
 	protected("/autonomous/interval", srv.handleAutonomousInterval)
-	protected("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		metrics.PrometheusHandler().ServeHTTP(w, r)
-	})
 
 	// ── Server avec timeout global ───────────────────────────────────────
 	addr := "127.0.0.1:8080"
@@ -190,7 +189,7 @@ func main() {
 }
 
 // authMiddleware handles Bearer token authentication.
-// The chain order is: securityHeaders → LoggingMiddleware → authMiddleware → RateLimiterMiddleware → handler
+// The chain order is: securityHeaders → rateLimiter → authMiddleware → LoggingMiddleware → handler
 // We do NOT verify the token for /health (liveness).
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
