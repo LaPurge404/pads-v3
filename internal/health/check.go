@@ -67,7 +67,7 @@ func NewChecker(paths Paths, workerFn func() bool) *Checker {
 //   - Worker: calls WorkerFn to get running state
 func (c *Checker) Check() HealthChecker {
 	return HealthChecker{
-		DB:             checkFileExists(c.Paths.WALPath),
+		DB:             checkFileExists(c.Paths.SemDB),
 		WAL:            checkFileExists(c.Paths.WALPath),
 		SemanticMemory: checkSQLite(c.Paths.SemDB),
 		Worker:         c.checkWorker(),
