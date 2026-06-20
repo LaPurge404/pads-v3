@@ -1,13 +1,149 @@
 package autonomous
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"pads-v3/internal/agent"
 	"pads-v3/internal/policy/evolution"
 )
+
+// TestGenerateIDNonEmpty verifies that generateID returns a non-empty string.
+func TestGenerateIDNonEmpty(t *testing.T) {
+	id := generateID()
+	if id == "" {
+		t.Error("generateID() returned empty string, want non-empty")
+	}
+}
+
+// TestGenerateIDHexFormat verifies that generateID returns a valid hexadecimal string.
+func TestGenerateIDHexFormat(t *testing.T) {
+	id := generateID()
+	// 8 bytes → 16 hex characters
+	if len(id) != 16 {
+		t.Errorf("generateID() length = %d, want 16", len(id))
+	}
+	for _, c := range id {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			t.Errorf("generateID() contains non-hex char %q", c)
+			break
+		}
+	}
+}
+
+// TestGenerateIDUniqueness is a probabilistic check that IDs are not all identical.
+func TestGenerateIDUniqueness(t *testing.T) {
+	ids := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		id := generateID()
+		if ids[id] {
+			t.Logf("generateID() produced duplicate ID: %s (may indicate non-randomness)", id)
+		}
+		ids[id] = true
+	}
+	if len(ids) < 90 {
+		t.Errorf("generateID() only produced %d unique IDs out of 100 calls", len(ids))
+	}
+}
+
+// TestApplyAndCommitNoFiles verifies that applyAndCommit returns an error when there are no files to commit.
+func TestApplyAndCommitNoFiles(t *testing.T) {
+	m := New()
+	tmpDir := t.TempDir()
+
+	// Initialize a real git repo so git commands don't fail for other reasons.
+	if err := initGitRepo(tmpDir); err != nil {
+		t.Fatalf("initGitRepo: %v", err)
+	}
+
+	plan := agent.Plan{Steps: []agent.Action{}}
+	committed, _, err := m.applyAndCommit(plan, tmpDir)
+	if err == nil {
+		t.Error("applyAndCommit with no files: expected error, got nil")
+	}
+	if committed {
+		t.Error("applyAndCommit with no files: committed = true, want false")
+	}
+}
+
+// TestApplyAndCommitFileNotFound verifies that applyAndCommit returns an error when target file does not exist.
+func TestApplyAndCommitFileNotFound(t *testing.T) {
+	m := New()
+	tmpDir := t.TempDir()
+
+	if err := initGitRepo(tmpDir); err != nil {
+		t.Fatalf("initGitRepo: %v", err)
+	}
+
+	plan := agent.Plan{
+		Steps: []agent.Action{
+			{Kind: agent.ActionWriteFile, Target: filepath.Join(tmpDir, "nonexistent.go")},
+		},
+	}
+	committed, _, err := m.applyAndCommit(plan, tmpDir)
+	if err == nil {
+		t.Error("applyAndCommit with nonexistent file: expected error, got nil")
+	}
+	if committed {
+		t.Error("applyAndCommit with nonexistent file: committed = true, want false")
+	}
+}
+
+// initGitRepo creates a minimal git repository in dir with a valid user config.
+func initGitRepo(dir string) error {
+	for _, cmd := range []struct {
+		name string
+		args []string
+	}{
+		{"git", []string{"init"}},
+		{"git", []string{"config", "user.email", "test@test.com"}},
+		{"git", []string{"config", "user.name", "test"}},
+	} {
+		c := exec.Command(cmd.name, cmd.args...)
+		c.Dir = dir
+		if err := c.Run(); err != nil {
+			return fmt.Errorf("%s: %w", cmd.name, err)
+		}
+	}
+	return nil
+}
+
+// TestApplyAndCommitSuccess verifies applyAndCommit succeeds when files exist.
+func TestApplyAndCommitSuccess(t *testing.T) {
+	m := New()
+	tmpDir := t.TempDir()
+
+	if err := initGitRepo(tmpDir); err != nil {
+		t.Fatalf("initGitRepo: %v", err)
+	}
+
+	// Create a real file and stage it.
+	filePath := filepath.Join(tmpDir, "real.go")
+	if err := os.WriteFile(filePath, []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	plan := agent.Plan{
+		Steps: []agent.Action{
+			{Kind: agent.ActionWriteFile, Target: filePath},
+		},
+	}
+	committed, hash, err := m.applyAndCommit(plan, tmpDir)
+	if err != nil {
+		t.Errorf("applyAndCommit with existing file: unexpected error: %v", err)
+	}
+	if !committed {
+		t.Error("applyAndCommit with existing file: committed = false, want true")
+	}
+	if hash == "" {
+		t.Error("applyAndCommit with existing file: hash is empty, want non-empty")
+	}
+}
+
+// TestRunCycleDisabled is in the existing test file.
 
 func TestModeToggle(t *testing.T) {
 	m := New()
