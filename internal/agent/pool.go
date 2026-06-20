@@ -99,7 +99,7 @@ func (ap *AgentPool) RunAll(ctx context.Context, task Task, ctxContext Context) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	_, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	type result struct {

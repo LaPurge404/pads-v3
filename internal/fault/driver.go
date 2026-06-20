@@ -45,6 +45,17 @@ type injectableConn struct {
 	rng  *rand.Rand
 }
 
+func (c *injectableConn) injectLatency() {
+	if c.cfg.LatencyMax > 0 {
+		sleep := c.cfg.LatencyMin + time.Duration(c.rng.Int63n(int64(c.cfg.LatencyMax-c.cfg.LatencyMin)))
+		time.Sleep(sleep)
+	}
+}
+
+func (c *injectableConn) shouldError(rate float64) bool {
+	return c.rng.Float64() < rate
+}
+
 func (c *injectableConn) Prepare(query string) (driver.Stmt, error) {
 	c.injectLatency()
 	if c.shouldError(c.cfg.ErrorRate) {
@@ -85,18 +96,8 @@ func (c *injectableConn) BeginTx(ctx context.Context, opts *driver.TxOptions) (d
 		}
 		return tx.BeginTx(ctx, *opts)
 	}
+	// Fallback for drivers that do not implement ConnBeginTx (deprecated but required for interface completeness).
 	return c.conn.Begin()
-}
-
-func (c *injectableConn) injectLatency() {
-	if c.cfg.LatencyMax > 0 {
-		sleep := c.cfg.LatencyMin + time.Duration(c.rng.Int63n(int64(c.cfg.LatencyMax-c.cfg.LatencyMin)))
-		time.Sleep(sleep)
-	}
-}
-
-func (c *injectableConn) shouldError(rate float64) bool {
-	return c.rng.Float64() < rate
 }
 
 type injectableStmt struct {

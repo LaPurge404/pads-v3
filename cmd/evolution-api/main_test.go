@@ -67,11 +67,6 @@ func setupTestMux(srv *Server) *http.ServeMux {
 	return mux
 }
 
-// authHeader returns a valid Authorization header for the test server.
-func authHeader(token string) map[string]string {
-	return map[string]string{"Authorization": "Bearer " + token}
-}
-
 func TestHealth(t *testing.T) {
 	srv := newTestServer(t)
 	mux := setupTestMux(srv)

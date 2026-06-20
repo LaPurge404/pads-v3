@@ -113,10 +113,7 @@ func (u *UCBSelector) Load(path string) error {
 	u.arms = state.Arms
 	u.counts = state.Counts
 	// Rebuild names slice preserving order
-	u.names = make([]string, 0, len(state.Names))
-	for _, n := range state.Names {
-		u.names = append(u.names, n)
-	}
+	u.names = append(u.names, state.Names...)
 	u.mu.Unlock()
 	return nil
 }

@@ -105,7 +105,8 @@ func executeSnapshot(files []FileSnapshot) ([]ExecutionResult, error) {
 			continue
 		}
 
-		status, exitCode, stderr, _ := runGoTest(f.FilePath)
+		_, exitCode, stderr, _ := runGoTest(f.FilePath)
+		var status string
 		if exitCode != 0 {
 			status = "FAIL"
 		} else {

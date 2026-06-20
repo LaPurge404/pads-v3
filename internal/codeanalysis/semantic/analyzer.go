@@ -329,11 +329,6 @@ func (a *Analyzer) signatureString(pkg *types.Package, name string) string {
 
 // buildCallGraph finds caller/callee relationships between functions in the AST.
 func (a *Analyzer) buildCallGraph(node *ast.File, pkg *types.Package, scope *types.Scope, sum *Summary) {
-	type callerInfo struct {
-		symIndex int
-		called   map[string]bool
-	}
-
 	// Collect all function names first
 	funcNames := make(map[string]int)
 	for i, s := range sum.Symbols {

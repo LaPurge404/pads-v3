@@ -241,9 +241,6 @@ func computeSignatureHash(nd nodeInfo) (string, error) {
 	sortedArgs := make([]string, len(nd.ArgsTypes))
 	copy(sortedArgs, nd.ArgsTypes)
 	sort.Strings(sortedArgs)
-	if sortedArgs == nil {
-		sortedArgs = []string{}
-	}
 
 	canon := struct {
 		NodeType     string   `json:"nodetype"`

@@ -294,7 +294,7 @@ func (c *ClaudeClient) generate(ctx context.Context, prompt CodePrompt) (*CodeRe
 	}
 
 	if statusCode != http.StatusOK {
-		return nil, fmt.Errorf("Claude API returned status %d: %s", statusCode, string(body))
+		return nil, fmt.Errorf("claude API returned status %d: %s", statusCode, string(body))
 	}
 
 	var claudeResp struct {
@@ -330,7 +330,7 @@ func (c *ClaudeClient) doRequest(ctx context.Context, url string, payload []byte
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("Claude HTTP request: %w", err)
+		return nil, 0, fmt.Errorf("claude HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
 

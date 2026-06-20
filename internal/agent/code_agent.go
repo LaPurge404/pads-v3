@@ -14,9 +14,6 @@ type CodeAgent struct {
 	executor      *Executor
 	maxRetries    int
 	minConfidence float64
-
-	// Circuit state accessors (nil if not that provider).
-	nvidiaCB, openaiCB, claudeCB *CircuitBreaker
 }
 
 // NewCodeAgent creates a CodeAgent with the given LLM client.
