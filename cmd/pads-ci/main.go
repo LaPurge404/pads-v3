@@ -71,15 +71,25 @@ func main() {
 func getTestScore() float64 {
 	cmd := exec.Command("go", "test", "./...", "-count=1")
 	output, _ := cmd.CombinedOutput()
-	outStr := string(output)
+	return parseGoTestOutput(string(output))
+}
+
+// parseGoTestOutput computes the score (passed / total) * 100 from go test output.
+// Exported so it can be tested in main_test.go.
+func parseGoTestOutput(outStr string) float64 {
 	lines := strings.Split(outStr, "\n")
 	passed := 0
 	failed := 0
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "ok ") {
+		flds := strings.Fields(trimmed)
+		if len(flds) == 0 {
+			continue
+		}
+		switch flds[0] {
+		case "ok":
 			passed++
-		} else if strings.HasPrefix(trimmed, "FAIL ") {
+		case "FAIL":
 			failed++
 		}
 	}
