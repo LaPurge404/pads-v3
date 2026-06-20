@@ -69,6 +69,13 @@ func main() {
 	}
 }
 
+// RebuildState creates a ReplayEngine from the given events and returns its final state.
+// Exported to allow testing from main_test.go.
+func RebuildState(events []evolution.Event) evolution.SystemState {
+	engine := evolution.NewReplayEngine(events)
+	return engine.Rebuild()
+}
+
 func printState(seq int, s evolution.SystemState) {
 	fmt.Printf("=== Séquence %d ===\n", seq)
 	fmt.Printf("Mode: %s\n", s.Mode)
