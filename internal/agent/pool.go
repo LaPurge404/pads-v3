@@ -56,7 +56,7 @@ func NewAgentPool(n int, projectRoot string, semMemGetter func() *memory.Semanti
 	// Use default strategies if not enough custom ones.
 	strategies := DefaultAgentStrategies
 	for len(strategies) < n {
-		strategies = append(strategies, "strategy_"+string(rune('A'+len(strategies))))
+		strategies = append(strategies, fmt.Sprintf("strategy_%d", len(strategies)))
 	}
 
 	// Shared evolution loop — all agents write to the same WAL/state.

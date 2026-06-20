@@ -53,17 +53,31 @@ func (w *WAL) loadFromDisk() {
 		return
 	}
 
+	var prevHash string
 	scanner := bufio.NewScanner(w.file)
+	lineNum := 0
 	for scanner.Scan() {
+		lineNum++
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
 		var entry Entry
 		if err := json.Unmarshal(line, &entry); err == nil {
+			// Validate hash chain integrity.
+			if entry.Hash != computeHash(entry) {
+				slog.Warn("wal: entry hash mismatch, skipping entry", "line", lineNum, "hash", entry.Hash)
+				continue
+			}
+			// Validate chain continuity.
+			if prevHash != "" && entry.PrevHash != prevHash {
+				slog.Warn("wal: broken chain link, skipping entry", "line", lineNum, "prevHash", entry.PrevHash, "expected", prevHash)
+				continue
+			}
+			prevHash = entry.Hash
 			w.entries = append(w.entries, entry)
 		} else {
-			slog.Warn("wal: skipped corrupted JSON line", "line", string(line), "error", err)
+			slog.Warn("wal: skipped corrupted JSON line", "line", lineNum, "error", err)
 		}
 	}
 }

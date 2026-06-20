@@ -29,6 +29,7 @@ type UCBSelector struct {
 	saveTimer   *time.Timer        // debounced save timer
 	stopSave    chan struct{}      // closed when auto-save goroutine should exit
 	saveWg      sync.WaitGroup
+	enableOnce  sync.Once         // prevents double-launch of auto-save goroutine
 	mu          sync.Mutex         // protects arms/counts/names for thread safety
 }
 
@@ -119,28 +120,31 @@ func (u *UCBSelector) Load(path string) error {
 }
 
 // EnableAutoSave starts a background goroutine that saves the state to path
-// at most once per interval (debounced). Multiple calls are idempotent.
+// at most once per interval (debounced). It is safe to call multiple times
+// (subsequent calls are no-ops) because a sync.Once guard prevents re-launching.
 func (u *UCBSelector) EnableAutoSave(interval time.Duration) {
 	if u.persistPath == "" {
 		return
 	}
-	u.saveWg.Add(1)
-	go func() {
-		defer u.saveWg.Done()
-		for {
-			select {
-			case <-u.stopSave:
-				return
-			case <-time.After(interval):
-				u.saveMu.Lock()
-				if u.saveTimer != nil {
-					u.Save(u.persistPath)
+	u.enableOnce.Do(func() {
+		u.saveWg.Add(1)
+		go func() {
+			defer u.saveWg.Done()
+			for {
+				select {
+				case <-u.stopSave:
+					return
+				case <-time.After(interval):
+					u.saveMu.Lock()
+					if u.saveTimer != nil {
+						u.Save(u.persistPath)
+					}
+					u.saveTimer = nil
+					u.saveMu.Unlock()
 				}
-				u.saveTimer = nil
-				u.saveMu.Unlock()
 			}
-		}
-	}()
+		}()
+	})
 }
 
 // scheduleSave resets the debounce timer. Safe to call from multiple goroutines.

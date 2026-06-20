@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 // workspaceHandler returns the Git repository state and test results.
@@ -14,20 +16,34 @@ func (s *Server) workspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	passed, failed := runTestsOnce()
+	cached, ok := workspaceCache.Load().(workspaceResult)
+	if ok && time.Since(cached.At) < 10*time.Second {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(cached.Resp)
+		return
+	}
 
+	passed, failed := runTestsOnce()
 	resp := map[string]interface{}{
 		"gitBranch":  getGitBranch(),
 		"gitStatus":  getGitStatus(),
 		"testPassed": passed,
 		"testFailed": failed,
 	}
+	workspaceCache.Store(workspaceResult{Resp: resp, At: time.Now()})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
-// runTestsOnce executes "go test ./..." once and returns (passed, failed) counts.
+type workspaceResult struct {
+	Resp map[string]interface{}
+	At   time.Time
+}
+
+var workspaceCache atomic.Value // stores workspaceResult
+
+// runTestsOnce executes "go test ./...\" once and returns (passed, failed) counts.
 func runTestsOnce() (passed, failed int) {
 	cmd := exec.Command("go", "test", "./...", "-count=1")
 	out, err := cmd.CombinedOutput()

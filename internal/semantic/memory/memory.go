@@ -204,10 +204,11 @@ func resolveAndInsertCall(tx *sql.Tx, callerID, callerPkg, callerFile, calleeNam
 // the index for files whose content hash has changed since the last run.
 // It only re-indexes stale files, so it is suitable to call on every
 // modification without paying the full project cost.
+//
+// The write lock is held only for the DB transaction; the file walk
+// (I/O-heavy) runs without any lock so reads are not blocked.
 func (m *SemanticMemory) IncrementallyIndex() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	// Phase 1: collect files and hashes without holding any lock.
 	var goFiles []string
 	if err := filepath.Walk(m.projectRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -220,6 +221,10 @@ func (m *SemanticMemory) IncrementallyIndex() error {
 	}); err != nil {
 		return fmt.Errorf("IncrementallyIndex walk: %w", err)
 	}
+
+	// Phase 2: index DB writes under a single write lock (brief, no I/O).
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	now := time.Now().Unix()
 
