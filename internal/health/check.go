@@ -127,6 +127,18 @@ func CheckWithAutonomous(h HealthChecker, autoStats *AutonomousStatus) HealthChe
 	return h
 }
 
+// CheckWithLLM enriches h with circuit-breaker states from the three LLM clients.
+// This allows /health to report whether each provider's circuit is closed/open/half-open
+// without exposing any credentials.
+func CheckWithLLM(h HealthChecker, nvidia, openai, claude string) HealthChecker {
+	h.LLM = &LLMCircuitStatus{
+		Nvidia:  nvidia,
+		OpenAI:  openai,
+		Claude:  claude,
+	}
+	return h
+}
+
 // String returns a human-readable summary of the health check status.
 func (h HealthChecker) String() string {
 	return "HealthChecker{DB: " + boolStr(h.DB) +

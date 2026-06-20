@@ -198,6 +198,16 @@ Generate the code change:`, prompt.Task, prompt.FilePath, prompt.Language, promp
 	return nil, fmt.Errorf("LLM call failed after %d attempts: %w", maxRetries, lastErr)
 }
 
+// CBState returns the current circuit-breaker state as a string:
+// "closed", "open", or "half-open". Returns "unavailable" if the circuit
+// breaker has not been initialized (nil).
+func (c *OpenAIClient) CBState() string {
+	if c == nil || c.cb == nil {
+		return "unavailable"
+	}
+	return c.cb.State()
+}
+
 // parseResponse parses the LLM's text response into a CodeResponse.
 func (c *OpenAIClient) parseResponse(content string, prompt CodePrompt) (*CodeResponse, error) {
 	// Try to extract JSON from the response
@@ -326,6 +336,16 @@ func (c *ClaudeClient) doRequest(ctx context.Context, url string, payload []byte
 
 	body, _ = io.ReadAll(resp.Body)
 	return body, resp.StatusCode, nil
+}
+
+// CBState returns the current circuit-breaker state as a string:
+// "closed", "open", or "half-open". Returns "unavailable" if the circuit
+// breaker has not been initialized (nil).
+func (c *ClaudeClient) CBState() string {
+	if c == nil || c.cb == nil {
+		return "unavailable"
+	}
+	return c.cb.State()
 }
 
 // mockResponse returns a mock response for development without API keys.
@@ -527,6 +547,16 @@ func (c *NvidiaClient) parseResponse(content string, prompt CodePrompt) (*CodeRe
 		codeResp.Confidence = 0.7
 	}
 	return &codeResp, nil
+}
+
+// CBState returns the current circuit-breaker state as a string:
+// "closed", "open", or "half-open". Returns "unavailable" if the circuit
+// breaker has not been initialized (nil).
+func (c *NvidiaClient) CBState() string {
+	if c == nil || c.cb == nil {
+		return "unavailable"
+	}
+	return c.cb.State()
 }
 
 // mockResponse returns a mock response for development without API keys.

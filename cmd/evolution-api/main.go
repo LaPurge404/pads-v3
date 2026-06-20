@@ -151,7 +151,6 @@ func main() {
 	mux.HandleFunc("/", srv.dashboard)
 	mux.HandleFunc("/health", srv.health)
 	mux.HandleFunc("/dashboard/enriched", srv.dashboardEnriched)
-	mux.HandleFunc("/metrics", metrics.PrometheusHandler())
 
 	// Protected endpoints: securityHeaders → auth → rate limit → logging → handler
 	protected := func(path string, h http.HandlerFunc) {
@@ -173,6 +172,9 @@ func main() {
 	protected("/autonomous/toggle", srv.handleAutonomousToggle)
 	protected("/autonomous/run", srv.handleAutonomousRun)
 	protected("/autonomous/interval", srv.handleAutonomousInterval)
+	protected("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		metrics.PrometheusHandler().ServeHTTP(w, r)
+	})
 
 	// ── Server avec timeout global ───────────────────────────────────────
 	addr := "127.0.0.1:8080"
@@ -291,6 +293,24 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(sysState)
 }
 
+// cbState returns the circuit-breaker state string for an LLM client,
+// or "unavailable" if the client is nil or its circuit breaker is nil.
+func cbState(client agent.LLMClient) string {
+	if client == nil {
+		return "unavailable"
+	}
+	switch c := client.(type) {
+	case *agent.NvidiaClient:
+		return c.CBState()
+	case *agent.OpenAIClient:
+		return c.CBState()
+	case *agent.ClaudeClient:
+		return c.CBState()
+	default:
+		return "unknown"
+	}
+}
+
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	// Build real health checker with filesystem and worker verification.
 	paths := health.Paths{
@@ -331,6 +351,13 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		}
 		h = health.CheckWithAutonomous(h, autoStats)
 	}
+
+	// Add LLM circuit-breaker states (cbState returns "unavailable" for nil clients).
+	h = health.CheckWithLLM(h,
+		cbState(s.nvidiaClient),
+		cbState(s.openaiClient),
+		cbState(s.claudeClient),
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h)
