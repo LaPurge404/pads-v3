@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ─── Enrich ─────────────────────────────────────────────────────────────────
@@ -292,3 +293,90 @@ func (m *mockLLMClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*C
 }
 
 func (m *mockLLMClient) Close() error { return nil }
+
+// TestCircuitBreakerStateClosed verifies State() returns "closed" initially.
+func TestCircuitBreakerStateClosed(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Hour)
+	if state := cb.State(); state != "closed" {
+		t.Errorf("new CircuitBreaker State() = %q, want %q", state, "closed")
+	}
+}
+
+// TestCircuitBreakerStateOpen verifies State() returns "open" after max failures.
+func TestCircuitBreakerStateOpen(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Hour)
+	for i := 0; i < 3; i++ {
+		cb.RecordFailure()
+	}
+	if state := cb.State(); state != "open" {
+		t.Errorf("after 3 failures State() = %q, want %q", state, "open")
+	}
+}
+
+// TestCircuitBreakerAllowClosed verifies Allow returns nil when circuit is closed.
+func TestCircuitBreakerAllowClosed(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Hour)
+	if err := cb.Allow(); err != nil {
+		t.Errorf("Allow() on closed circuit = %v, want nil", err)
+	}
+}
+
+// TestCircuitBreakerAllowOpen verifies Allow returns ErrCircuitOpen when circuit is open.
+func TestCircuitBreakerAllowOpen(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Hour)
+	for i := 0; i < 3; i++ {
+		cb.RecordFailure()
+	}
+	// Recovery window is 1 hour, so should still be open.
+	if err := cb.Allow(); err != ErrCircuitOpen {
+		t.Errorf("Allow() on open circuit = %v, want %v", err, ErrCircuitOpen)
+	}
+}
+
+// TestCircuitBreakerRecordSuccessResetsFailures verifies RecordSuccess in closed state resets failure counter.
+func TestCircuitBreakerRecordSuccessResetsFailures(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Hour)
+	cb.RecordFailure()
+	cb.RecordFailure() // 2 failures, not at max yet
+	cb.RecordSuccess() // reset failures to 0
+	cb.RecordFailure() // back to 1
+	cb.RecordFailure() // back to 2
+	// Not at 3, so circuit should still be closed
+	if state := cb.State(); state != "closed" {
+		t.Errorf("after 2 failures + success + 2 failures State() = %q, want %q", state, "closed")
+	}
+}
+
+// TestCircuitBreakerRecordFailureHalfOpen verifies failure in half-open reopens circuit.
+func TestCircuitBreakerRecordFailureHalfOpen(t *testing.T) {
+	cb := NewCircuitBreaker(1, 0) // recovery window = 0, immediate transition
+	// Open the circuit
+	cb.RecordFailure()
+	// Recovery window is 0, so Allow() will transition to half-open
+	cb.Allow() // transitions to half-open
+	if state := cb.State(); state != "half-open" {
+		t.Fatalf("after Allow on open cb with 0 recovery State() = %q, want %q", state, "half-open")
+	}
+	// Now record failure in half-open
+	cb.RecordFailure()
+	if state := cb.State(); state != "open" {
+		t.Errorf("after RecordFailure in half-open State() = %q, want %q", state, "open")
+	}
+}
+
+// TestIsValidActionKind verifies IsValidActionKind returns correct booleans.
+func TestIsValidActionKind(t *testing.T) {
+	validKinds := []ActionKind{ActionLog, ActionWriteFile, ActionRunCommand}
+	for _, k := range validKinds {
+		if !IsValidActionKind(k) {
+			t.Errorf("IsValidActionKind(%q) = false, want true", k)
+		}
+	}
+
+	invalidKinds := []ActionKind{"invalid", "", "TOTALLY_WRONG", ActionKind("")}
+	for _, k := range invalidKinds {
+		if IsValidActionKind(k) {
+			t.Errorf("IsValidActionKind(%q) = true, want false", k)
+		}
+	}
+}
