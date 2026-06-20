@@ -204,6 +204,63 @@ func TestCheckWithPool(t *testing.T) {
 	})
 }
 
+func TestCheckWithLLM(t *testing.T) {
+	t.Run("enriches HealthChecker with LLM circuit states", func(t *testing.T) {
+		h := HealthChecker{DB: true, WAL: true, SemanticMemory: true, Worker: true}
+		result := CheckWithLLM(h, "closed", "open", "half-open")
+
+		if result.LLM == nil {
+			t.Fatal("CheckWithLLM().LLM is nil, want non-nil")
+		}
+		if result.LLM.Nvidia != "closed" {
+			t.Errorf("Nvidia = %q, want %q", result.LLM.Nvidia, "closed")
+		}
+		if result.LLM.OpenAI != "open" {
+			t.Errorf("OpenAI = %q, want %q", result.LLM.OpenAI, "open")
+		}
+		if result.LLM.Claude != "half-open" {
+			t.Errorf("Claude = %q, want %q", result.LLM.Claude, "half-open")
+		}
+	})
+
+	t.Run("preserves original HealthChecker fields", func(t *testing.T) {
+		h := HealthChecker{DB: true, WAL: false, SemanticMemory: true, Worker: false}
+		result := CheckWithLLM(h, "closed", "closed", "closed")
+
+		if !result.DB {
+			t.Error("DB field lost after CheckWithLLM")
+		}
+		if result.WAL {
+			t.Error("WAL field changed unexpectedly")
+		}
+		if !result.SemanticMemory {
+			t.Error("SemanticMemory field lost")
+		}
+		if result.Worker {
+			t.Error("Worker field changed unexpectedly")
+		}
+	})
+
+	t.Run("accepts unavailable state", func(t *testing.T) {
+		h := HealthChecker{}
+		result := CheckWithLLM(h, "unavailable", "unavailable", "unavailable")
+		if result.LLM == nil {
+			t.Fatal("LLM is nil")
+		}
+		if result.LLM.Nvidia != "unavailable" {
+			t.Errorf("Nvidia = %q, want %q", result.LLM.Nvidia, "unavailable")
+		}
+	})
+
+	t.Run("accepts all closed state", func(t *testing.T) {
+		h := HealthChecker{}
+		result := CheckWithLLM(h, "closed", "closed", "closed")
+		if result.LLM.Nvidia != "closed" || result.LLM.OpenAI != "closed" || result.LLM.Claude != "closed" {
+			t.Error("expected all closed states")
+		}
+	})
+}
+
 func TestCheckWithAutonomous(t *testing.T) {
 	t.Run("enriches HealthChecker with AutonomousStatus", func(t *testing.T) {
 		h := HealthChecker{DB: true, WAL: true, SemanticMemory: true, Worker: true}
