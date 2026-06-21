@@ -120,11 +120,24 @@ func main() {
 	mux.HandleFunc("/health", srv.health)
 	mux.HandleFunc("/dashboard/enriched", srv.dashboardEnriched)
 
-	// Protected endpoints: securityHeaders → auth → rate limit → logging → handler
+	// Protected endpoints:
+	//   logging → auth → rate-limit → security-headers → handler
+	//
+	// Why auth BEFORE rate-limit matters:
+	//   The RateLimiter tracks requests PER BEARER TOKEN (not per IP).
+	//   An attacker spraying 1000 fake 'Authorization: Bearer *** '
+	//   headers would, with the previous rate-limit-before-auth order,
+	//   grow the limiter's requests map with garbage entries — every
+	//   5 minutes the cleanup loop evicts in LRU order over a 1000-cap
+	//   map, which is fine for legitimate traffic but expensive when
+	//   the volume is malicious. By placing auth first, anon abuse
+	//   bails out before touching the limiter state. Doc-comments
+	//   (README §Sécurité, DESIGN.md §5) already claim auth is checked
+	//   before rate-limiting; this commit makes the code match the doc.
 	protected := func(path string, h http.HandlerFunc) {
 		chain := securityHeaders(h)
-		chain = srv.rl.Middleware(chain)
 		chain = srv.authMiddleware(chain)
+		chain = srv.rl.Middleware(chain)
 		chain = evolution.LoggingMiddleware(chain)
 		mux.HandleFunc(path, chain)
 	}
