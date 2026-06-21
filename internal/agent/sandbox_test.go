@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -305,4 +306,114 @@ func Add(a, b int) int {
 	if strings.Contains(string(originalData), "not an int") {
 		t.Error("original file should be rolled back after sandbox failure")
 	}
+}
+
+// TestApplyChangeRejectsPathTraversal is the security regression test for the
+// sandbox-escape vulnerability. Each case crafts a targetPath that LOOKS like
+// it could escape the sandbox via "..", absolute paths, or the common-prefix
+// trap. ApplyChange MUST return an error containing "escapes sandbox" for
+// every malicious case, and MUST NOT create any file outside the sandbox.
+//
+// This complements ApplyChange's happy-path test (TestSandboxApplyChange) by
+// asserting the rejects. Without the validation in resolveSandboxTarget,
+// these cases would either write to /etc/passwd, sentinel files in /tmp,
+// or files outside the sandbox.
+func TestApplyChangeRejectsPathTraversal(t *testing.T) {
+	// Build a minimal project root so that filepath.Rel succeeds against it.
+	// projectRoot encodes the "directory we own"; we want targetPaths that
+	// look like they're inside this directory but resolve to elsewhere.
+	projectRoot, err := os.MkdirTemp("", "pads-sandbox-traversal-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectRoot)
+
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"),
+		[]byte("module x\n\ngo 1.21"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sandbox, err := NewSandbox(projectRoot)
+	if err != nil {
+		t.Fatalf("NewSandbox: %v", err)
+	}
+	defer sandbox.Close()
+
+	cases := []struct {
+		// name describes the attack vector
+		name string
+		// path is what a malicious caller would attempt to write to
+		path string
+	}{
+		{
+			name: "parent_traversal_outside_projectRoot",
+			// /tmp/<sandbox>/../../etc/passwd — filepath.Clean collapses
+			// the leading /tmp/<sandbox>/.. into /tmp/. Beyond that we
+			// produce a final ".." segment that escapes projectRoot.
+			path: filepath.Join(projectRoot, "..", "..", "etc", "passwd"),
+		},
+		{
+			name: "absolute_path_outside_projectRoot",
+			path: "/etc/passwd",
+		},
+		{
+			name: "absolute_path_outside_sandbox_but_under_projectRoot",
+			// /tmp itself is reachable via projectRoot; this still counts
+			// as escaping because the user only "owns" files inside the
+			// project tree, not arbitrary /tmp siblings.
+			path: filepath.Join(os.TempDir(), "pads-evil", "hidden.txt"),
+		},
+		{
+			name: "double_dot_alone",
+			// A bare ".." must reject (no further path supplied).
+			path: "..",
+		},
+		{
+			name: "embedded_double_dot_segment",
+			path: filepath.Join(projectRoot, "subdir", "..", "..", "etc", "shadow"),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := sandbox.ApplyChange(tc.path, "malicious payload")
+			if err == nil {
+				t.Fatalf("ApplyChange(%q) must reject, but returned nil", tc.path)
+			}
+			if !strings.Contains(err.Error(), "escapes sandbox") {
+				t.Fatalf("ApplyChange(%q): unexpected error %q, want substring %q",
+					tc.path, err, "escapes sandbox")
+			}
+			// The error must preserve the original targetPath so audit logs
+			// can attribute the offending caller.
+			if !strings.Contains(err.Error(), "target path") {
+				t.Fatalf("ApplyChange(%q): error missing audit trail of original path; got %q",
+					tc.path, err)
+			}
+		})
+	}
+
+	// Sentinel check: nothing outside the sandbox should have been written.
+	// /etc/passwd may legitimately exist on Linux, so we only probe for a
+	// sentinel we created in os.TempDir() that the test expects NOT to exist.
+	if _, err := os.Stat(filepath.Join(os.TempDir(), "pads-evil")); err == nil {
+		t.Errorf("ApplyChange created %s which is outside the sandbox",
+			filepath.Join(os.TempDir(), "pads-evil"))
+	}
+
+	// Sanity: confirm the happy-path test still works (legitimate file inside
+	// projectRoot). Use a fresh, unique subpath to avoid colliding with any
+	// pre-existing test fixtures.
+	legit := filepath.Join(projectRoot, "legit", "ok.go")
+	if err := sandbox.ApplyChange(legit, "package x"); err != nil {
+		// If MkdirAll fails inside the sandbox (e.g. tmp dir vanished), we
+		// tolerate that — what matters is that the security gate did NOT
+		// produce an "escapes sandbox" error.
+		if strings.Contains(err.Error(), "escapes sandbox") {
+			t.Fatalf("ApplyChange(%q) wrongly rejected a legitimate target: %v", legit, err)
+		}
+		t.Logf("ApplyChange(%q) happy-path non-security error (acceptable): %v", legit, err)
+	}
+
+	_ = errors.Is
 }

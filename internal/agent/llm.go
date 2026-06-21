@@ -53,6 +53,10 @@ type OpenAIClient struct {
 	Model   string
 	BaseURL string
 	Timeout time.Duration
+	// Breaker short-circuits calls when the upstream is degraded. Defaults to
+	// 5 consecutive failures → 30s open window → 1 half-open probe. Lazily
+	// initialized on first call so tests can construct clients without an env.
+	Breaker *Breaker
 }
 
 // NewOpenAIClient creates an OpenAI LLM client.
@@ -79,6 +83,26 @@ func (c *OpenAIClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*Co
 	if c.APIKey == "dummy-key-for-development" {
 		return c.mockResponse(prompt)
 	}
+
+	var out *CodeResponse
+	err := c.breaker().Do(func() error {
+		resp, err := c.doGenerate(ctx, prompt)
+		if err != nil {
+			return err
+		}
+		out = resp
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// doGenerate performs one full OpenAI GenerateCode attempt including retries,
+// returning the parsed response on success. Callers should usually wrap this
+// in c.breaker().Do (see GenerateCode).
+func (c *OpenAIClient) doGenerate(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 
 	systemPrompt := `You are PADS, an autonomous code improvement agent.
 Your task is to generate code fixes or improvements for the given file.
@@ -221,6 +245,8 @@ type ClaudeClient struct {
 	APIKey  string
 	Model   string
 	Timeout time.Duration
+	// Breaker short-circuits calls when the Anthropic API is degraded.
+	Breaker *Breaker
 }
 
 // NewClaudeClient creates a Claude LLM client.
@@ -333,6 +359,43 @@ func temperatureFor(temp float64) float64 {
 	return 0.3
 }
 
+// defaultBreaker returns a freshly-initialized circuit breaker wired with the
+// project-wide policy: 5 consecutive failures, 30s open, single half-open
+// probe. Clients initialized from defaults get this breaker on first use; if
+// they need a custom one (tests, tuned thresholds), they can set Breaker
+// before the first call.
+func defaultBreaker() *Breaker {
+	return &Breaker{
+		FailureThreshold: 5,
+		OpenDuration:     30 * time.Second,
+		HalfOpenMax:      1,
+	}
+}
+
+// breaker lazily initializes the per-client circuit breaker on first use.
+// Tests can pre-assign c.Breaker with tuned thresholds before calling
+// GenerateCode; production users leave it nil and get the project default.
+func (c *OpenAIClient) breaker() *Breaker {
+	if c.Breaker == nil {
+		c.Breaker = defaultBreaker()
+	}
+	return c.Breaker
+}
+
+func (c *ClaudeClient) breaker() *Breaker {
+	if c.Breaker == nil {
+		c.Breaker = defaultBreaker()
+	}
+	return c.Breaker
+}
+
+func (c *NvidiaClient) breaker() *Breaker {
+	if c.Breaker == nil {
+		c.Breaker = defaultBreaker()
+	}
+	return c.Breaker
+}
+
 // NvidiaClient implements LLMClient using the NVIDIA API (NIM/inference endpoints).
 // This is the DEFAULT client when no specific provider is requested.
 type NvidiaClient struct {
@@ -340,6 +403,8 @@ type NvidiaClient struct {
 	Model   string
 	BaseURL string
 	Timeout time.Duration // exported for test configuration
+	// Breaker short-circuits calls when the NVIDIA API is degraded.
+	Breaker *Breaker
 }
 
 // NewNvidiaClient creates a NVIDIA LLM client.

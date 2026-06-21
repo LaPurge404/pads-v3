@@ -70,7 +70,7 @@ func main() {
 		if err := os.WriteFile(*tokenFile, []byte(authToken), 0600); err != nil {
 			slog.Error("écriture token dans fichier", "error", err)
 		}
-		slog.Info("Token généré", "token", authToken)
+		slog.Info("Token généré", "length", len(authToken))
 	}
 
 	queue, err := evolution.NewEventQueue("event_queue.log")
@@ -193,7 +193,7 @@ func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.authToken = newToken
-	slog.Warn("Token rotaté", "token", newToken)
+	slog.Warn("Token rotaté", "length", len(newToken))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "rotated", "token": newToken})
