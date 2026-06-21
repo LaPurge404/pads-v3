@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"unicode"
 )
@@ -133,11 +134,29 @@ func (a *CodeAgent) buildPlan(task Task, resp *CodeResponse) Plan {
 		})
 	}
 
-	// Add a test run after the fix
+	// Add a test run after the fix.
+	//
+	// SECURITY: task.Target flows in from the agent (LLM output) and could
+	// contain shell metacharacters if the LLM is getting creative. We
+	// validate it strictly before splicing it into any command line, and
+	// we avoid "bash -c" entirely. The sandbox executor runs the
+	// Command tokens via exec.Command(cmdStr, args...) so passing argv
+	// directly means no shell interpretation happens — there is nothing
+	// for ";rm -rf /" to attach to.
+	//
+	// We no longer cd into the per-file directory: the test invocation
+	// runs go test ./... at the sandbox WorkDir root, which covers all
+	// packages and is sufficient for a post-edit sanity check. If we
+	// later need per-file test names, command Dir (argv-level cd, no
+	// shell) can be threaded through Action in a separate, focused
+	// change.
+	if _, err := safeDirForFile(task.Target); err != nil {
+		return Plan{}, fmt.Errorf("buildPlan: invalid target %q: %w", task.Target, err)
+	}
 	steps = append(steps, Action{
 		Kind:    ActionRunCommand,
 		Target:  "go test -run " + testNameForFile(task.Target) + " ./...",
-		Command: []string{"bash", "-c", "cd " + dirForFile(task.Target) + " && go test ./..."},
+		Command: []string{"go", "test", "-run", testNameForFile(task.Target), "./..."},
 	})
 
 	return Plan{Steps: steps}
@@ -301,12 +320,59 @@ func isDiff(patch string) bool {
 }
 
 // dirForFile returns the directory containing a file.
+//
+// Deprecated: dirForFile does not validate the path. Use safeDirForFile
+// when the input could come from an untrusted source (LLM output, HTTP
+// body, etc.).
 func dirForFile(filePath string) string {
 	idx := strings.LastIndex(filePath, "/")
 	if idx < 0 {
 		return "."
 	}
 	return filePath[:idx]
+}
+
+// safeDirForFile returns the clean directory containing filePath. It
+// rejects any input that could drive a shell injection when later
+// concatenated into a command line:
+//
+//   - empty string
+//   - leading "-" (would be interpreted as a flag)
+//   - any byte that is not [a-zA-Z0-9._/-] (no shell metacharacters,
+//     no spaces, no quotes, no backticks, no $(), no ; no &&, no |, …)
+//   - any ".." segment after filepath.Clean (catches "../../etc/passwd")
+//   - absolute paths (defense in depth; project-relative paths only)
+//
+// The point is to give buildPlan — and any future caller that splices
+// a path into argv-level execution — a single chokepoint that the test
+// suite can pin. The regex is intentionally strict; if a legitimate
+// path is rejected, prefer relaxing here rather than reintroducing
+// concatenation risks at the call site.
+func safeDirForFile(filePath string) (string, error) {
+	if filePath == "" {
+		return "", fmt.Errorf("empty path")
+	}
+	if strings.HasPrefix(filePath, "-") {
+		return "", fmt.Errorf("path starts with %q (flag-like)", filePath[:1])
+	}
+	for _, r := range filePath {
+		if !(r == '/' || r == '.' || r == '_' || r == '-' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9')) {
+			return "", fmt.Errorf("path contains disallowed character %q", r)
+		}
+	}
+	cleaned := filepath.Clean(filePath)
+	if cleaned == ".." ||
+		strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("path %q escapes project root after Clean", filePath)
+	}
+	idx := strings.LastIndex(cleaned, "/")
+	if idx < 0 {
+		return ".", nil
+	}
+	return cleaned[:idx], nil
 }
 
 // testNameForFile generates a test name pattern for a source file.
