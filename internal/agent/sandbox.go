@@ -72,21 +72,97 @@ func (s *Sandbox) WorkDir() string {
 	return s.workDir
 }
 
-// ApplyChange applies a file change to the sandbox.
-func (s *Sandbox) ApplyChange(targetPath string, content string) error {
-	// Map the target path from project root to sandbox
+// resolveSandboxTarget validates that targetPath resolves to a path inside
+// s.workDir and returns the absolute, clean in-sandbox path to write to.
+//
+// Security invariants enforced:
+//  1. targetPath must be expressible as a relative path inside s.projectRoot
+//     (filepath.Rel must succeed).
+//  2. After filepath.Clean, that relative path must NOT use ".." segments
+//     and must NOT be absolute. This catches "../../etc/passwd".
+//  3. After joining with s.workDir and cleaning, the result must lie in
+//     s.workDir. We check with strings.HasPrefix on the bare path AND with
+//     filepath.Rel on the absolute paths. The bare-prefix check with the
+//     path separator appended catches the "common-prefix" trap where
+//     s.workDir == "/tmp/x" would otherwise accept "/tmp/xxx/evil" under a
+//     naive `strings.HasPrefix(sandboxPath, absRoot)` test.
+//
+// Any failure is reported with the original targetPath quoted, so audit logs
+// can identify the offending caller. Returns the absolute in-sandbox path
+// suitable for os.WriteFile.
+func (s *Sandbox) resolveSandboxTarget(targetPath string) (string, error) {
+	// Step 1: targetPath must be inside projectRoot.
 	relPath, err := filepath.Rel(s.projectRoot, targetPath)
 	if err != nil {
-		return fmt.Errorf("compute relative path: %w", err)
+		return "", fmt.Errorf("compute relative path: %w", err)
 	}
-	sandboxPath := filepath.Join(s.workDir, relPath)
 
-	// Ensure parent directory exists
+	// Step 2: clean and forbid parent-directory traversal or absolute paths
+	// leaking through Rel.
+	cleanRel := filepath.Clean(relPath)
+	if cleanRel == ".." ||
+		strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(cleanRel) {
+		return "", fmt.Errorf("target path %q escapes sandbox "+
+			"(contains parent-directory traversal or absolute segment)",
+			targetPath)
+	}
+
+	// Step 3: build sandboxPath, clean it, and assert it stays inside s.workDir.
+	sandboxPath := filepath.Clean(filepath.Join(s.workDir, cleanRel))
+
+	// Resolve both sides to absolute paths for a hardened check that does NOT
+	// rely on lexical prefix alone. Lexical prefix is used below as an early
+	// fast-path; the filepath.Rel-based check is the source of truth.
+	absSandbox, err := filepath.Abs(sandboxPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve sandbox path: %w", err)
+	}
+	absRoot, err := filepath.Abs(s.workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve workdir: %w", err)
+	}
+
+	// Fast-path lexical check with the path separator appended. This catches
+	// the "common-prefix" attack (s.workDir=/tmp/x vs attacker=/tmp/xxx/...)
+	// because we require the next byte after absRoot to be a separator (or
+	// the strings to be equal).
+	if absSandbox != absRoot &&
+		!strings.HasPrefix(absSandbox, absRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("target path %q escapes sandbox "+
+			"(lexical: not under workDir %q)", targetPath, absRoot)
+	}
+
+	// Source-of-truth check via filepath.Rel — robust on every platform.
+	relToRoot, err := filepath.Rel(absRoot, absSandbox)
+	if err != nil ||
+		relToRoot == ".." ||
+		strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("target path %q escapes sandbox "+
+			"(final check: relative to workDir is %q)", targetPath, relToRoot)
+	}
+
+	return absSandbox, nil
+}
+
+// ApplyChange applies a file change to the sandbox.
+//
+// Security: targetPath MUST resolve inside s.workDir after filepath.Clean.
+// Path traversal attempts (e.g. "../../etc/passwd") are rejected by
+// resolveSandboxTarget before any filesystem operation runs, so MkdirAll and
+// WriteFile cannot escape via the sandbox root.
+func (s *Sandbox) ApplyChange(targetPath string, content string) error {
+	sandboxPath, err := s.resolveSandboxTarget(targetPath)
+	if err != nil {
+		return err
+	}
+
+	// Ensure parent directory exists.
 	if err := os.MkdirAll(filepath.Dir(sandboxPath), 0755); err != nil {
 		return fmt.Errorf("create parent dir: %w", err)
 	}
 
-	// Write the file
+	// Write the file inside the sandbox.
 	if err := os.WriteFile(sandboxPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
