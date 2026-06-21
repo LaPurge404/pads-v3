@@ -62,7 +62,10 @@ func (a *CodeAgent) Solve(task Task, ctx Context) (Plan, error) {
 	}
 
 	// Build the plan from the LLM response
-	plan := a.buildPlan(task, resp)
+	plan, err := a.buildPlan(task, resp)
+	if err != nil {
+		return Plan{}, err
+	}
 
 	return plan, nil
 }
@@ -114,7 +117,12 @@ func (a *CodeAgent) buildPrompt(task Task, ctx Context) CodePrompt {
 }
 
 // buildPlan converts an LLM response into an executable Plan.
-func (a *CodeAgent) buildPlan(task Task, resp *CodeResponse) Plan {
+//
+// Returns (Plan, error) rather than only (Plan): validating the agent
+// target through safeDirForFile may legitimately reject the input and
+// the caller (Solve) MUST surface that as an error to the LLM, instead
+// of silently producing a half-built plan.
+func (a *CodeAgent) buildPlan(task Task, resp *CodeResponse) (Plan, error) {
 	var steps []Action
 
 	// The patch can be either a full file content or a diff
@@ -159,7 +167,7 @@ func (a *CodeAgent) buildPlan(task Task, resp *CodeResponse) Plan {
 		Command: []string{"go", "test", "-run", testNameForFile(task.Target), "./..."},
 	})
 
-	return Plan{Steps: steps}
+	return Plan{Steps: steps}, nil
 }
 
 // detectLanguage guesses the programming language from file extension.

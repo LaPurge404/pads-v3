@@ -308,7 +308,7 @@ func TestBuildPrompt(t *testing.T) {
 // TestBuildPlan verifies that buildPlan generates a Plan with the expected steps.
 func TestBuildPlan(t *testing.T) {
 	agent := NewCodeAgent(nil)
-	plan := agent.buildPlan(
+	plan, err := agent.buildPlan(
 		Task{Kind: TaskFixBroken, Target: "add.go", Goal: "fix nil check"},
 		&CodeResponse{
 			Patch:       "func add(a, b int) int { return a + b }",
@@ -316,6 +316,9 @@ func TestBuildPlan(t *testing.T) {
 			Confidence:  0.85,
 		},
 	)
+	if err != nil {
+		t.Fatalf("buildPlan: %v", err)
+	}
 	if len(plan.Steps) == 0 {
 		t.Error("plan should have at least one step")
 	}
