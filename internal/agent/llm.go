@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -57,6 +58,9 @@ type OpenAIClient struct {
 	// 5 consecutive failures → 30s open window → 1 half-open probe. Lazily
 	// initialized on first call so tests can construct clients without an env.
 	Breaker *Breaker
+	// breakerOnce guards the lazy init in (c *OpenAIClient).breaker() so
+	// concurrent first-time callers share a single Breaker instance.
+	breakerOnce sync.Once
 }
 
 // NewOpenAIClient creates an OpenAI LLM client.
@@ -247,6 +251,8 @@ type ClaudeClient struct {
 	Timeout time.Duration
 	// Breaker short-circuits calls when the Anthropic API is degraded.
 	Breaker *Breaker
+	// breakerOnce guards the lazy init in (c *ClaudeClient).breaker().
+	breakerOnce sync.Once
 }
 
 // NewClaudeClient creates a Claude LLM client.
@@ -397,26 +403,43 @@ func defaultBreaker() *Breaker {
 }
 
 // breaker lazily initializes the per-client circuit breaker on first use.
-// Tests can pre-assign c.Breaker with tuned thresholds before calling
-// GenerateCode; production users leave it nil and get the project default.
+//
+// Thread-safe via sync.Once: earlier revisions used a non-atomic `c.Breaker
+// == nil` check, which is a data race under -race when multiple goroutines
+// issue GenerateCode on the same client simultaneously. Two goroutines could
+// both observe `c.Breaker == nil` and assign two distinct defaultBreaker()
+// instances, which silently breaks the protection: each goroutine would
+// account against its own breaker, never tripping the shared one. The race
+// caught CB0e75d's wrap to receive a regression test in
+// internal/agent/breaker_race_test.go.
+//
+// The Once-per-client approach lets tests pre-assign c.Breaker with tuned
+// thresholds at construction time (still wins over the once-fired closure);
+// production users leave it nil and get one shared defaultBreaker.
 func (c *OpenAIClient) breaker() *Breaker {
-	if c.Breaker == nil {
-		c.Breaker = defaultBreaker()
-	}
+	c.breakerOnce.Do(func() {
+		if c.Breaker == nil {
+			c.Breaker = defaultBreaker()
+		}
+	})
 	return c.Breaker
 }
 
 func (c *ClaudeClient) breaker() *Breaker {
-	if c.Breaker == nil {
-		c.Breaker = defaultBreaker()
-	}
+	c.breakerOnce.Do(func() {
+		if c.Breaker == nil {
+			c.Breaker = defaultBreaker()
+		}
+	})
 	return c.Breaker
 }
 
 func (c *NvidiaClient) breaker() *Breaker {
-	if c.Breaker == nil {
-		c.Breaker = defaultBreaker()
-	}
+	c.breakerOnce.Do(func() {
+		if c.Breaker == nil {
+			c.Breaker = defaultBreaker()
+		}
+	})
 	return c.Breaker
 }
 
@@ -429,6 +452,8 @@ type NvidiaClient struct {
 	Timeout time.Duration // exported for test configuration
 	// Breaker short-circuits calls when the NVIDIA API is degraded.
 	Breaker *Breaker
+	// breakerOnce guards the lazy init in (c *NvidiaClient).breaker().
+	breakerOnce sync.Once
 }
 
 // NewNvidiaClient creates a NVIDIA LLM client.
