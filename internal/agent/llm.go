@@ -264,11 +264,35 @@ func NewClaudeClient(model string) *ClaudeClient {
 
 // GenerateCode implements LLMClient using Anthropic's Claude API.
 // Falls back to a mock response when no real API key is configured.
+//
+// The real-API path is wrapped in c.breaker().Do so a sustained outage of
+// the Anthropic API surfaces as ErrCircuitOpen after 5 consecutive failures
+// rather than stacking up ever-growing retry waits in callers. pattern
+// matches the OpenAI client implementation.
 func (c *ClaudeClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	if c.APIKey == "dummy-key-for-development" {
 		return c.mockResponse(prompt), nil
 	}
 
+	var out *CodeResponse
+	err := c.breaker().Do(func() error {
+		resp, err := c.doGenerate(ctx, prompt)
+		if err != nil {
+			return err
+		}
+		out = resp
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// doGenerate performs one full Claude GenerateCode attempt including the
+// HTTP request/response cycle and JSON decoding. Callers should usually
+// wrap this in c.breaker().Do (see GenerateCode).
+func (c *ClaudeClient) doGenerate(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	// Build request payload for Anthropic Messages API.
 	promptText := fmt.Sprintf("Task: %s\nFile: %s\nLanguage: %s\nContext: %s\nConstraints: %s\nGenerate code:", prompt.Task, prompt.FilePath, prompt.Language, prompt.Context, prompt.Constraints)
 	reqBody := map[string]any{
@@ -430,10 +454,35 @@ func NewNvidiaClient(model string) *NvidiaClient {
 }
 
 // GenerateCode implements LLMClient using NVIDIA's completion API.
+//
+// Mirrors the OpenAI wrap: the real-API path is wrapped in c.breaker().Do
+// so a sustained NVIDIA outage surfaces as ErrCircuitOpen after 5
+// consecutive failures. Mock mode is unaffected (no upstream → no breaker
+// accounting needed).
 func (c *NvidiaClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	if c.APIKey == "dummy-key-for-development" {
 		return c.mockResponse(prompt)
 	}
+
+	var out *CodeResponse
+	err := c.breaker().Do(func() error {
+		resp, err := c.doGenerate(ctx, prompt)
+		if err != nil {
+			return err
+		}
+		out = resp
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// doGenerate performs one full NVIDIA GenerateCode attempt including retries,
+// returning the parsed response on success. Callers should usually wrap this
+// in c.breaker().Do (see GenerateCode).
+func (c *NvidiaClient) doGenerate(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 
 	systemPrompt := `You are PADS, an autonomous code improvement agent.
 Your task is to generate code fixes or improvements for the given file.
