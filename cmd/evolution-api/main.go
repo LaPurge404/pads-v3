@@ -173,6 +173,18 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 // handleRotate generates a new token and persists it in token.txt.
 // Requires authentication.
+//
+// SECURITY: the response intentionally does NOT echo the new token in
+// body or headers. The token in token.txt (chmod 0600, written above)
+// is the canonical source; the caller — typically a local admin with
+// shell access to the same box — already has access to read the file.
+// Echoing the token in the response would leak the secret into HTTP
+// logs, proxy captures, browser history, and aggregator pipelines that
+// all see the response body but do not necessarily have file access.
+// Returning 204 No Content with no payload also satisfies the OWASP
+// "Rotation of Authentication Secrets" recommendation:
+//
+//   https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html#key-rotation
 func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -193,10 +205,11 @@ func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.authToken = newToken
-	slog.Warn("Token rotaté", "length", len(newToken))
+	slog.Warn("Token rotaté", "length", len(newToken), "path", s.tokenFile)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "rotated", "token": newToken})
+	// 204 No Content — the caller re-reads token.txt to pick up the
+	// new secret. We deliberately do not return the token in the body.
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
