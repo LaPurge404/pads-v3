@@ -27,11 +27,14 @@ func TestSafeEvolutionLoopV3_ConcurrentEvolveAndRead(t *testing.T) {
 	bandit := evolution.NewBandit()
 	loop := evolution.NewSafeEvolutionLoopV3(orch, es, wal, detector, evolution.ModeStable, bandit)
 
+	// Candidate.Score is int (see internal/policy/evolution/types.go), so we
+	// vary by id+i%5 as an int. The float64 form (50 + float64(id + i % 5))
+	// does not compile and was caught by go vet/test on Go 1.26.x.
 	const (
-		writers         = 4
-		readers         = 8
-		evolutionsPer   = 25
-		stabilityReads  = 1000
+		writers        = 4
+		readers        = 8
+		evolutionsPer  = 25
+		stabilityReads = 1000
 	)
 
 	var wg sync.WaitGroup
@@ -45,7 +48,7 @@ func TestSafeEvolutionLoopV3_ConcurrentEvolveAndRead(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < evolutionsPer; i++ {
 				ok, err := loop.Evolve(
-					evolution.Candidate{Score: 50 + float64(id+i%5)},
+					evolution.Candidate{Score: 50 + (id + i%5)},
 					evolution.Candidate{Score: 50},
 					1.0,
 				)

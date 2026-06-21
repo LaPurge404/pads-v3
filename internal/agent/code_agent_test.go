@@ -365,12 +365,12 @@ func TestSafeDirForFile(t *testing.T) {
 	}
 
 	good := map[string]string{
-		"foo.go":                ".",
-		"internal/foo.go":       "internal",
-		"internal/agent/x.go":   "internal/agent",
-		"a-b_c.d/e.go":          "a-b_c.d",
+		"foo.go":                   ".",
+		"internal/foo.go":          "internal",
+		"internal/agent/x.go":      "internal/agent",
+		"a-b_c.d/e.go":             "a-b_c.d",
 		"path/with-many-dashes/ok": "path/with-many-dashes",
-		"x":                     ".",
+		"x":                        ".",
 	}
 	for in, want := range good {
 		got, err := safeDirForFile(in)

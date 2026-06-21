@@ -12,32 +12,32 @@ import (
 // ucbState is the JSON-serializable form of UCBSelector for persistence.
 type ucbState struct {
 	Arms   map[string]float64 `json:"arms"`
-	Counts map[string]int      `json:"counts"`
-	Names  []string            `json:"names"`
+	Counts map[string]int     `json:"counts"`
+	Names  []string           `json:"names"`
 }
 
 // UCBSelector implements a bandit using the UCB1 algorithm.
 type UCBSelector struct {
-	arms       map[string]float64 // total reward per arm
-	counts     map[string]int     // number of pulls per arm
-	names      []string
-	rng        *rand.Rand
-	persistPath string             // if non-empty, auto-save is enabled
-	saveMu      sync.Mutex         // protects pendingSave
-	saveTimer   *time.Timer        // debounced save timer
-	stopSave    chan struct{}      // closed when auto-save goroutine should exit
+	arms        map[string]float64 // total reward per arm
+	counts      map[string]int     // number of pulls per arm
+	names       []string
+	rng         *rand.Rand
+	persistPath string        // if non-empty, auto-save is enabled
+	saveMu      sync.Mutex    // protects pendingSave
+	saveTimer   *time.Timer   // debounced save timer
+	stopSave    chan struct{} // closed when auto-save goroutine should exit
 	saveWg      sync.WaitGroup
-	mu          sync.Mutex         // protects arms/counts/names for thread safety
+	mu          sync.Mutex // protects arms/counts/names for thread safety
 }
 
 // NewUCBSelector creates a new UCBSelector and optionally restores its state
 // from path. If path exists it is loaded; otherwise a fresh selector is created.
 func NewUCBSelector(seed int64, persistPath ...string) *UCBSelector {
 	u := &UCBSelector{
-		arms:   make(map[string]float64),
-		counts: make(map[string]int),
-		names:  make([]string, 0),
-		rng:    rand.New(rand.NewSource(seed)),
+		arms:     make(map[string]float64),
+		counts:   make(map[string]int),
+		names:    make([]string, 0),
+		rng:      rand.New(rand.NewSource(seed)),
 		stopSave: make(chan struct{}),
 	}
 	if len(persistPath) > 0 && persistPath[0] != "" {
@@ -198,7 +198,7 @@ func (u *UCBSelector) Select() string {
 	bestValue := -1.0
 	for _, name := range u.names {
 		avgReward := u.arms[name] / float64(u.counts[name])
-		exploration := math.Sqrt(2*math.Log(float64(totalPulls)) / float64(u.counts[name]))
+		exploration := math.Sqrt(2 * math.Log(float64(totalPulls)) / float64(u.counts[name]))
 		ucb := avgReward + exploration
 		if ucb > bestValue {
 			bestValue = ucb

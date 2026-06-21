@@ -19,11 +19,11 @@ const workspaceCacheTTL = 10 * time.Second
 // workspaceCache holds the latest (passed, failed) counts plus the timestamp
 // at which they were captured. Both fields are guarded by mu.
 type workspaceCache struct {
-	mu       sync.Mutex
-	cached   bool
-	at       time.Time
-	passed   int
-	failed   int
+	mu     sync.Mutex
+	cached bool
+	at     time.Time
+	passed int
+	failed int
 }
 
 var wsCache workspaceCache

@@ -9,8 +9,8 @@ import (
 
 // PoolStats holds AgentPool statistics for health reporting.
 type PoolStats struct {
-	Size     int                                `json:"pool_size"`
-	BestArm  string                             `json:"best_arm"`
+	Size     int                              `json:"pool_size"`
+	BestArm  string                           `json:"best_arm"`
 	ArmStats map[string]evolution.UCBArmStats `json:"arm_stats"`
 }
 
@@ -38,8 +38,8 @@ type Paths struct {
 
 // Checker performs real health checks against filesystem paths.
 type Checker struct {
-	Paths   Paths
-	Worker  func() bool // function to check if worker is running
+	Paths  Paths
+	Worker func() bool // function to check if worker is running
 }
 
 // NewChecker creates a health Checker with the given paths and worker check.

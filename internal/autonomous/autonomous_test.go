@@ -114,28 +114,28 @@ func TestModeCycleNum(t *testing.T) {
 
 func TestComputeSandboxScore(t *testing.T) {
 	cases := []struct {
-		name  string
-		res   agent.SandboxResult
+		name     string
+		res      agent.SandboxResult
 		minScore int
 	}{
 		{
-			name: "passed no warnings",
-			res: agent.SandboxResult{Passed: true, BuildOutput: "ok", TestOutput: ""},
+			name:     "passed no warnings",
+			res:      agent.SandboxResult{Passed: true, BuildOutput: "ok", TestOutput: ""},
 			minScore: 100, // 30 (build) + 50 (pass) + 20 (no warnings)
 		},
 		{
-			name: "passed with warnings",
-			res: agent.SandboxResult{Passed: true, BuildOutput: "warning", TestOutput: "warning"},
+			name:     "passed with warnings",
+			res:      agent.SandboxResult{Passed: true, BuildOutput: "warning", TestOutput: "warning"},
 			minScore: 80, // 30 + 50, no warning bonus
 		},
 		{
-			name: "build error",
-			res: agent.SandboxResult{BuildOutput: "error", TestOutput: ""},
+			name:     "build error",
+			res:      agent.SandboxResult{BuildOutput: "error", TestOutput: ""},
 			minScore: 0, // no build bonus, no pass bonus
 		},
 		{
-			name: "partial tests",
-			res: agent.SandboxResult{Passed: false, TestsPassed: 3, TestsFailed: 1, BuildOutput: "ok", TestOutput: "ok"},
+			name:     "partial tests",
+			res:      agent.SandboxResult{Passed: false, TestsPassed: 3, TestsFailed: 1, BuildOutput: "ok", TestOutput: "ok"},
 			minScore: 67, // 30 + 37 (50*3/4) + 0 (warnings)
 		},
 	}

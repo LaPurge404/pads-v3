@@ -91,10 +91,16 @@ func (s *Sandbox) WorkDir() string {
 // can identify the offending caller. Returns the absolute in-sandbox path
 // suitable for os.WriteFile.
 func (s *Sandbox) resolveSandboxTarget(targetPath string) (string, error) {
-	// Step 1: targetPath must be inside projectRoot.
+	// Step 1: targetPath must be inside projectRoot. If targetPath is
+	// not absolute AND cannot be made relative to projectRoot (e.g. a
+	// bare ".." with no project prefix), we map that to the same
+	// "escapes sandbox" error the later steps emit, so audit consumers
+	// see one consistent signature regardless of which check tripped.
 	relPath, err := filepath.Rel(s.projectRoot, targetPath)
 	if err != nil {
-		return "", fmt.Errorf("compute relative path: %w", err)
+		return "", fmt.Errorf("target path %q escapes sandbox "+
+			"(cannot be resolved relative to projectRoot %q: %v)",
+			targetPath, s.projectRoot, err)
 	}
 
 	// Step 2: clean and forbid parent-directory traversal or absolute paths

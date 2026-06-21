@@ -19,12 +19,12 @@ import (
 )
 
 var (
-	tokenFile   = flag.String("token-file", "token.txt", "Fichier contenant le token d'authentification")
-	certFile    = flag.String("cert", "", "Certificat TLS")
-	keyFile     = flag.String("key", "", "Clé TLS")
-	timeout     = flag.Duration("timeout", 30*time.Second, "Timeout pour les handlers HTTP")
+	tokenFile      = flag.String("token-file", "token.txt", "Fichier contenant le token d'authentification")
+	certFile       = flag.String("cert", "", "Certificat TLS")
+	keyFile        = flag.String("key", "", "Clé TLS")
+	timeout        = flag.Duration("timeout", 30*time.Second, "Timeout pour les handlers HTTP")
 	autonomousFlag = flag.Bool("autonomous", false, "Activer le mode autonome (équivalent de PADS_AUTONOMOUS=true)")
-	projectRoot = flag.String("project-root", ".", "Racine du projet à améliorer")
+	projectRoot    = flag.String("project-root", ".", "Racine du projet à améliorer")
 )
 
 type Server struct {
@@ -34,9 +34,9 @@ type Server struct {
 	authToken      string
 	rl             *evolution.RateLimiter
 	selector       evolution.Selector
-	pool           *agent.AgentPool    // optional multi-agent pool
+	pool           *agent.AgentPool     // optional multi-agent pool
 	agentLoop      *evolution.AgentLoop // evolution engine for autonomous mode
-	autonomousMode *autonomous.Mode    // autonomous closed-loop driver
+	autonomousMode *autonomous.Mode     // autonomous closed-loop driver
 	projectRoot    string
 }
 
@@ -194,7 +194,7 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		const denied = func(w http.ResponseWriter) {
+		denied := func(w http.ResponseWriter) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		}
 		authHeader := r.Header.Get("Authorization")
@@ -235,7 +235,7 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // Returning 204 No Content with no payload also satisfies the OWASP
 // "Rotation of Authentication Secrets" recommendation:
 //
-//   https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html#key-rotation
+//	https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html#key-rotation
 func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -377,9 +377,9 @@ func (s *Server) handleAutonomousToggle(w http.ResponseWriter, r *http.Request) 
 	enabled := s.autonomousMode.Toggle()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"enabled":        enabled,
-		"cycles_total":   s.autonomousMode.CycleNum(),
-		"note":           "autonomous mode is now "+map[bool]string{true: "ENABLED", false: "DISABLED"}[enabled],
+		"enabled":      enabled,
+		"cycles_total": s.autonomousMode.CycleNum(),
+		"note":         "autonomous mode is now " + map[bool]string{true: "ENABLED", false: "DISABLED"}[enabled],
 	})
 }
 
@@ -421,7 +421,7 @@ func (s *Server) handleAutonomousRun(w http.ResponseWriter, r *http.Request) {
 		sandboxExec,
 		s.agentLoop,
 		s.projectRoot,
-		0.0,       // semanticRisk: 0 (no analysis in this call)
+		0.0,        // semanticRisk: 0 (no analysis in this call)
 		[]string{}, // semanticReasons
 	)
 
