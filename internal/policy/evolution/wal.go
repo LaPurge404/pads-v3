@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -21,6 +22,25 @@ type Entry struct {
 }
 
 type WAL struct {
+	// mu guards entries and file access.
+	//
+	// Why RWMutex and not plain Mutex: this is an append-only log,
+	// so reads (LastEntry, Snapshot, Entries, and the read path of
+	// Replay/State) outnumber writes by a wide margin in the steady
+	// state. Letting N readers proceed concurrently while a single
+	// writer serializes writes against them keeps the replay/state
+	// hot path from contending unnecessarily. EventStore and RateLimiter
+	// use plain Mutex precisely because their access profile is the
+	// opposite; we keep them distinct on purpose so neither camp
+	// sneaks in a lock that's wrong for the other.
+	//
+	// Lock ordering: NEVER call out to outside code while holding
+	// mu — entriesMutex would deadlock with any other system that
+	// takes a lock as part of the Append path. fsync in flushEntry is
+	// synchronous and does not allocate in such a way that triggers
+	// GC pause contention, so we hold mu across Sync().
+	mu sync.RWMutex
+
 	entries []Entry
 	file    *os.File
 	path    string
@@ -69,6 +89,8 @@ func (w *WAL) loadFromDisk() {
 }
 
 func (w *WAL) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.file != nil {
 		return w.file.Close()
 	}
@@ -76,6 +98,9 @@ func (w *WAL) Close() error {
 }
 
 func (w *WAL) Append(candidate, current int, weight float64, mode Mode) (Entry, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	var prevHash string
 	if len(w.entries) > 0 {
 		prevHash = w.entries[len(w.entries)-1].Hash
@@ -92,14 +117,14 @@ func (w *WAL) Append(candidate, current int, weight float64, mode Mode) (Entry, 
 	w.entries = append(w.entries, entry)
 
 	// Persist immediately to disk
-	if err := w.flushEntry(entry); err != nil {
+	if err := w.flushEntryLocked(entry); err != nil {
 		return entry, err
 	}
 
 	return entry, nil
 }
 
-func (w *WAL) flushEntry(entry Entry) error {
+func (w *WAL) flushEntryLocked(entry Entry) error {
 	if w.file == nil {
 		return nil
 	}
@@ -145,6 +170,8 @@ func computeHash(e Entry) string {
 }
 
 func (w *WAL) LastEntry() *Entry {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	if len(w.entries) == 0 {
 		return nil
 	}
@@ -157,6 +184,8 @@ func (w *WAL) Snapshot() *Entry {
 
 // Entries returns a copy of all entries (for testing/debugging).
 func (w *WAL) Entries() []Entry {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	result := make([]Entry, len(w.entries))
 	copy(result, w.entries)
 	return result
