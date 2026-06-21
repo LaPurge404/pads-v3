@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -155,6 +156,24 @@ func main() {
 // authMiddleware handles Bearer token authentication.
 // The chain order is: securityHeaders → LoggingMiddleware → authMiddleware → RateLimiterMiddleware → handler
 // We do NOT verify the token for /health (liveness).
+//
+// SECURITY: token comparison uses crypto/subtle.ConstantTimeCompare so
+// the time-to-deny is independent of how many leading bytes happen to
+// match. A naive '!=' comparison leaks the matching prefix length in
+// timing: with enough samples an attacker can recover the token byte by
+// byte. Constant-time compare closes that channel.
+//
+// Important subtleties:
+//   - ConstantTimeCompare returns 0 immediately when the two slices
+//     have different lengths. That is fine because the expected length
+//     is a public-format fact (32 hex chars from a 16-byte rand.Read
+//     in token init/handleRotate).
+//   - We still want a single, unconditional path for both 401 cases
+//     (missing/short/wrong prefix and bad token) so the body is the
+//     same in every branch — no body-based oracle.
+//   - We use a single http.Error('Unauthorized') regardless of WHICH
+//     check failed. Splitting 'Bad prefix' vs 'Bad token' would defeat
+//     the constant-time guarantee.
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// /health does not require auth
@@ -162,9 +181,28 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") || strings.TrimPrefix(authHeader, "Bearer ") != s.authToken {
+		const denied = func(w http.ResponseWriter) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		}
+		authHeader := r.Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			denied(w)
+			return
+		}
+		got := strings.TrimPrefix(authHeader, "Bearer ")
+		want := s.authToken
+
+		// Length check first — public format info, safe outside CT.
+		// Without this, ConstantTimeCompare would short-circuit to 0
+		// in constant time anyway, but we'd still allocate a slice
+		// for every malformed Authorization header.
+		if len(got) != len(want) {
+			denied(w)
+			return
+		}
+		// Equal length: now constant-time byte compare.
+		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+			denied(w)
 			return
 		}
 		next(w, r)
