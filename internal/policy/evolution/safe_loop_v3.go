@@ -3,6 +3,7 @@ package evolution
 import (
 	"fmt"
 	"log/slog"
+	"sync"
 )
 
 type SafeEvolutionLoopV3 struct {
@@ -14,6 +15,22 @@ type SafeEvolutionLoopV3 struct {
 	sequence     int
 	selector     Selector
 	currentSeed  int64
+
+	// mu protects sequence, mode, currentSeed, and the anti-collapse detector's
+	// internal window. Concurrent calls to Evolve() share these fields (the
+	// agent pool at internal/agent/pool.go issues parallel evolutions on the
+	// same loop instance), so reads/writes must be serialized.
+	//
+	// mu is a sync.RWMutex to allow many concurrent readers (StabilityScore
+	// from /state, dashboards, health checks) while writers (Evolve) hold an
+	// exclusive lock. The detector window is also read by orchestrator.Evaluate
+	// path through detector.IsStable / IsOscillating; treating those as
+	// readers means concurrent StabilityScore reads don't serialize against
+	// each other, only against active evolutions.
+	//
+	// RollbackManager / WAL / EventStore each own their own synchronization
+	// and are considered safe to call while holding mu.
+	mu sync.RWMutex
 }
 
 func NewSafeEvolutionLoopV3(o *Orchestrator, es *EventStore, wal *WAL, detector *AntiCollapseDetector, mode Mode, selector Selector) *SafeEvolutionLoopV3 {
@@ -41,6 +58,16 @@ func NewSafeEvolutionLoopV3Minimal(mode Mode, selector Selector) *SafeEvolutionL
 }
 
 func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, weight float64) (bool, error) {
+	// Serialize concurrent evolutions on this loop. The detector's window and
+	// the sequence counter are shared state; the agent pool issues parallel
+	// Evolve() calls on the same loop instance.
+	//
+	// Writer lock: any active evolution invalidates the readers' snapshot of
+	// the detector window, so Evolve must block ALL concurrent readers until
+	// it finishes appending + bumping sequence. RLock is insufficient.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	result, accepted := l.orchestrator.Evaluate(candidate, current, weight)
 
 	if l.rollback.wal != nil {
@@ -86,7 +113,21 @@ func (l *SafeEvolutionLoopV3) Evolve(candidate Candidate, current Candidate, wei
 }
 
 // StabilityScore returns the current mean of the detector window.
+//
+// Uses a read-lock so concurrent observability callers (dashboard, /state,
+// health) do not block each other; they only contend with active Evolve()
+// calls, which hold the exclusive write lock briefly. Safe to call from
+// multiple goroutines simultaneously; the underlying detector.window is
+// read under RLock and Evolve() publishes new values under the write lock.
 func (l *SafeEvolutionLoopV3) StabilityScore() float64 {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.stabilityScoreLocked()
+}
+
+// stabilityScoreLocked is the unlocked implementation; callers must hold l.mu
+// (either RLock for pure reads or Lock for writers).
+func (l *SafeEvolutionLoopV3) stabilityScoreLocked() float64 {
 	if len(l.detector.window) == 0 {
 		return 0
 	}
