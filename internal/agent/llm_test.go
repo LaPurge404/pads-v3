@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/sony/gobreaker/v2"
 )
 
 // TestOpenAIClientMock verifies that without an API key, the client returns a mock.
@@ -299,40 +301,49 @@ func TestBreakerWrapsClaude(t *testing.T) {
 
 	c := NewClaudeClient("claude-opus-4")
 	c.APIKey = "real-test-key"
-	c.Breaker = &Breaker{
-		FailureThreshold: 2,
-		OpenDuration:     time.Minute,
-		HalfOpenMax:      1,
-	}
+	// Pre-assign a low-threshold breaker so the test trips after 2 consecutive
+	// failures. sony/gobreaker has no FailureThreshold field — we model the
+	// "trip after N consecutive failures" rule via ReadyToTrip.
+	const threshold = 2
+	c.Breaker = gobreaker.NewCircuitBreaker[*CodeResponse](gobreaker.Settings{
+		Name:        "test-claude-breaker",
+		MaxRequests: 1,
+		Timeout:     time.Minute,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= threshold
+		},
+	})
 	// ClaudeClient.doRequest uses http.DefaultClient against a hard-coded
 	// Anthropic URL, so it is impractical to redirect here. Instead we
-	// verify the breaker state machine by calling Do directly with a
+	// verify the breaker state machine by calling Execute directly with a
 	// failing closure matching the contract GenerateCode uses.
-	fail := func() error { return fmt.Errorf("synthetic upstream failure") }
+	fail := func() (*CodeResponse, error) {
+		return nil, fmt.Errorf("synthetic upstream failure")
+	}
 
 	// First two failures: under threshold, breaker stays closed.
 	for i := 0; i < 2; i++ {
-		if err := c.Breaker.Do(fail); err == nil {
+		if _, err := c.Breaker.Execute(fail); err == nil {
 			t.Fatalf("call %d: expected upstream error, got nil", i)
 		}
 	}
-	if got := c.Breaker.State(); got != "open" {
-		t.Fatalf("after %d failures breaker state = %q, want %q",
-			2, got, "open")
+	if got := c.Breaker.State(); got != gobreaker.StateOpen {
+		t.Fatalf("after %d failures breaker state = %s, want %s",
+			2, got, gobreaker.StateOpen)
 	}
 
-	// Third call: breaker is open → returns ErrCircuitOpen without
+	// Third call: breaker is open → returns ErrOpenState without
 	// invoking the closure. We confirm this by using a flag rather than
 	// counting the closure invocations: if closure had been called, the
-	// returned error would be "synthetic upstream failure"; ErrCircuitOpen
+	// returned error would be "synthetic upstream failure"; ErrOpenState
 	// proves the breaker short-circuited.
 	called := false
-	shortCircuit := func() error {
+	shortCircuit := func() (*CodeResponse, error) {
 		called = true
-		return nil
+		return nil, nil
 	}
-	if err := c.Breaker.Do(shortCircuit); !errors.Is(err, ErrCircuitOpen) {
-		t.Fatalf("third call: got %v, want ErrCircuitOpen", err)
+	if _, err := c.Breaker.Execute(shortCircuit); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Fatalf("third call: got %v, want gobreaker.ErrOpenState", err)
 	}
 	if called {
 		t.Fatal("breaker should have short-circuited without calling the closure")
@@ -367,40 +378,44 @@ func TestBreakerWrapsNvidia(t *testing.T) {
 	// retries per breaker call (3 retries × ~1ms backoff each on the
 	// first call, then 1s jitter on the second failure path — entirely
 	// fine for unit test).
-	c.Breaker = &Breaker{
-		FailureThreshold: 2,
-		OpenDuration:     time.Minute,
-		HalfOpenMax:      1,
-	}
+	const threshold = 2
+	c.Breaker = gobreaker.NewCircuitBreaker[*CodeResponse](gobreaker.Settings{
+		Name:        "test-nvidia-breaker",
+		MaxRequests: 1,
+		Timeout:     time.Minute,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= threshold
+		},
+	})
 
 	prompt := CodePrompt{Task: "x", FilePath: "y.go", Language: "go"}
 
-	// First two GenerateCode calls: each one is one breaker "Do" call.
+	// First two GenerateCode calls: each one is one breaker "Execute" call.
 	// Each ends with breaker state closed (under threshold).
 	for i := 0; i < 2; i++ {
 		_, err := c.GenerateCode(context.Background(), prompt)
 		if err == nil {
 			t.Fatalf("call %d: expected error from failing upstream", i)
 		}
-		if errors.Is(err, ErrCircuitOpen) {
+		if errors.Is(err, gobreaker.ErrOpenState) {
 			t.Fatalf("call %d: breaker opened too early (threshold=%d)",
-				i, c.Breaker.FailureThreshold)
+				i, threshold)
 		}
 	}
 
 	// After two failures the breaker should now be open.
-	if got := c.Breaker.State(); got != "open" {
-		t.Fatalf("after 2 failed GenerateCode calls, breaker state = %q, want %q",
-			got, "open")
+	if got := c.Breaker.State(); got != gobreaker.StateOpen {
+		t.Fatalf("after 2 failed GenerateCode calls, breaker state = %s, want %s",
+			got, gobreaker.StateOpen)
 	}
 
-	// Third GenerateCode call: breaker is now open → must return ErrCircuitOpen
+	// Third GenerateCode call: breaker is now open → must return ErrOpenState
 	// WITHOUT hitting the failing server (proven by completed-in-microseconds).
 	start := time.Now()
 	_, err := c.GenerateCode(context.Background(), prompt)
 	took := time.Since(start)
-	if !errors.Is(err, ErrCircuitOpen) {
-		t.Fatalf("third call: got %v, want ErrCircuitOpen (breaker wrap missing!)", err)
+	if !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Fatalf("third call: got %v, want gobreaker.ErrOpenState (breaker wrap missing!)", err)
 	}
 	// A breaker short-circuit should return essentially instantly (< 50ms).
 	// A real HTTP retry-loop path takes seconds because of initialBackoff=1s.

@@ -3,19 +3,23 @@ package evolution
 import (
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 )
 
 // worker.go — uses EventQueue with internal offset tracking.
 type Worker struct {
-	queue        *EventQueue
-	loop         *SafeEvolutionLoopV3
-	rewarder     Rewarder
-	Running      bool
-	concurrency  int
-	processed    map[string]bool
-	processedOrd []string // ordered list for LRU-like cleanup
-	processedCnt int      // counter for periodic cleanup
+	queue       *EventQueue
+	loop        *SafeEvolutionLoopV3
+	rewarder    Rewarder
+	running     bool
+	runningMu   sync.RWMutex // guards `running`; use IsRunning() for reads, Start()/Stop() for writes
+	concurrency int
+	processed   map[string]bool
+	// ordered list for LRU-like cleanup
+	processedOrd []string
+	// counter for periodic cleanup
+	processedCnt int
 }
 
 const (
@@ -35,9 +39,16 @@ func NewWorker(q *EventQueue, loop *SafeEvolutionLoopV3, rewarder Rewarder) *Wor
 }
 
 func (w *Worker) Start() {
-	w.Running = true
+	w.runningMu.Lock()
+	if w.running {
+		w.runningMu.Unlock()
+		slog.Warn("worker.Start déjà en cours, appel ignoré")
+		return
+	}
+	w.running = true
+	w.runningMu.Unlock()
 	slog.Info("worker démarré")
-	for w.Running {
+	for w.IsRunning() {
 		// ReadFrom tracks offset internally — reads only new events since last call
 		events, err := w.queue.ReadFrom()
 		if err != nil {
@@ -66,11 +77,30 @@ func (w *Worker) Start() {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	slog.Info("worker arrêté")
 }
 
-// IsRunning reports whether the worker goroutine is active.
+// Stop requests the worker loop to exit. Safe to call from any goroutine,
+// including concurrent callers; the loop observes the flag in at most one
+// iteration (≤ 500ms) via IsRunning(). Returns true if this call actually
+// flipped the flag from running→stopped, false if the worker was already
+// stopped (or returning after an idempotent re-call).
+func (w *Worker) Stop() bool {
+	w.runningMu.Lock()
+	defer w.runningMu.Unlock()
+	if !w.running {
+		return false
+	}
+	w.running = false
+	return true
+}
+
+// IsRunning reports whether the worker goroutine is active. Safe to call
+// from any goroutine — used by the /health handler.
 func (w *Worker) IsRunning() bool {
-	return w.Running
+	w.runningMu.RLock()
+	defer w.runningMu.RUnlock()
+	return w.running
 }
 
 // cleanupProcessed removes stale entries from the processed map.

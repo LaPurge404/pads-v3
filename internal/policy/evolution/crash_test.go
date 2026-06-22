@@ -34,8 +34,8 @@ func TestWorkerCrashRecovery(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Simulate a crash by stopping the worker
-	worker.Running = false
-	time.Sleep(100 * time.Millisecond)
+	worker.Stop()
+	time.Sleep(600 * time.Millisecond) // ≥ one full iteration (500ms loop tick) so Stop is observed
 
 	// State must have processed the event before the crash
 	events, _ := queue.LoadAll()

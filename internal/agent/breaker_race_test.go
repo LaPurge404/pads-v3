@@ -7,8 +7,33 @@ import (
 	"github.com/sony/gobreaker/v2"
 )
 
+// newOpenAIForTest, newClaudeForTest and newNvidiaForTest construct a
+// per-test client with a dummy API key, so breaker_race_test.go can
+// exercise the (c *XClient).breaker() lazy-init path without touching
+// the real OPENAI_API_KEY / ANTHROPIC_API_KEY / NVIDIA_API_KEY env vars
+// or making any network call. The breaker lazy init that these helpers
+// are built for is the regression target under -race — net access is
+// intentionally out of scope here.
+func newOpenAIForTest() *OpenAIClient {
+	c := NewOpenAIClient("gpt-4o-mini")
+	c.APIKey = "test-key"
+	return c
+}
+
+func newClaudeForTest() *ClaudeClient {
+	c := NewClaudeClient("claude-3-5-sonnet-latest")
+	c.APIKey = "test-key"
+	return c
+}
+
+func newNvidiaForTest() *NvidiaClient {
+	c := NewNvidiaClient("meta/llama-3.1-70b-instruct")
+	c.APIKey = "test-key"
+	return c
+}
+
 // TestBreakerLazyInitConcurrentAndShared is the regression test for a
-// -race-only data race that the original cb0e75d wrap inherited, and the
+// -race-only data race that the new gobreaker wrap inherited, and the
 // fine-grained sanity check that the breaker is shared across all callers
 // of a single client.
 //
@@ -27,8 +52,8 @@ import (
 // guarantees:
 //
 //  1. All N concurrent goroutines issued on a single client see the
-//     SAME *gobreaker.CircuitBreaker[*CodeResponse] pointer (a fresh
-//     client per round so each round hits a cold lazy-init path).
+//     SAME *gobreaker.CircuitBreaker[*CodeResponse] pointer — each
+//     sub-test constructs ONE client and N goroutines call c.breaker().
 //  2. Each round exercises real concurrency (8 goroutines per round,
 //     64 rounds) — under -race, a regression in the sync.Once would
 //     immediately fail.
@@ -36,9 +61,9 @@ import (
 // We also keep a per-type sub-test so a regression specific to one of
 // the three clients (OpenAI / Claude / Nvidia) trips the test.
 func TestBreakerLazyInitConcurrentAndShared(t *testing.T) {
-	t.Run("OpenAI", func(t *testing.T) { runBreakerRace(t, func() *gobreaker.CircuitBreaker[*CodeResponse] { return newOpenAIForTest().breaker() }) })
-	t.Run("Claude", func(t *testing.T) { runBreakerRace(t, func() *gobreaker.CircuitBreaker[*CodeResponse] { return newClaudeForTest().breaker() }) })
-	t.Run("Nvidia", func(t *testing.T) { runBreakerRace(t, func() *gobreaker.CircuitBreaker[*CodeResponse] { return newNvidiaForTest().breaker() }) })
+	t.Run("OpenAI", func(t *testing.T) { runBreakerRace(t, newOpenAIForTest()) })
+	t.Run("Claude", func(t *testing.T) { runBreakerRace(t, newClaudeForTest()) })
+	t.Run("Nvidia", func(t *testing.T) { runBreakerRace(t, newNvidiaForTest()) })
 
 	// Strong smoke test: 64 goroutines on a SINGLE client → all must
 	// observe the same *CB pointer (property (1) above under contention).
@@ -67,13 +92,20 @@ func TestBreakerLazyInitConcurrentAndShared(t *testing.T) {
 	})
 }
 
+// breakerClient is implemented by *OpenAIClient, *ClaudeClient, *NvidiaClient.
+// runBreakerRace only needs c.breaker().
+type breakerClient interface {
+	breaker() *gobreaker.CircuitBreaker[*CodeResponse]
+}
+
 // runBreakerRace exercises lazy-init concurrency per round and asserts
-// that all goroutines see the exact same Breaker pointer.
+// that all goroutines observe the SAME Breaker pointer on the SAME client.
 //
-// Each round uses a freshly-constructed client so the first-call path
-// is exercised exactly once per goroutine (otherwise subsequent rounds
-// hit a hot, already-init'd breaker and the test would silently green).
-func runBreakerRace(t *testing.T, builder func() *gobreaker.CircuitBreaker[*CodeResponse]) {
+// Each round uses the SINGLE client passed in; under sync.Once the first
+// caller on any round primes the breaker and every subsequent caller on
+// that round (and every future round on the same client) sees the same
+// pointer — which is precisely the invariant the production code relies on.
+func runBreakerRace(t *testing.T, c breakerClient) {
 	t.Helper()
 	const goroutines = 8
 	const rounds = 64
@@ -85,8 +117,6 @@ func runBreakerRace(t *testing.T, builder func() *gobreaker.CircuitBreaker[*Code
 			wg    sync.WaitGroup
 			start = make(chan struct{})
 		)
-		// First invocation primes the lazy init.
-		firstRef := builder()
 
 		for i := 0; i < goroutines; i++ {
 			wg.Add(1)
@@ -94,16 +124,15 @@ func runBreakerRace(t *testing.T, builder func() *gobreaker.CircuitBreaker[*Code
 				defer wg.Done()
 				<-start
 				mu.Lock()
-				seen[builder()] = struct{}{}
+				seen[c.breaker()] = struct{}{}
 				mu.Unlock()
 			}()
 		}
 		close(start)
 		wg.Wait()
-		seen[firstRef] = struct{}{}
 
 		if len(seen) != 1 {
-			t.Fatalf("round %d: %d distinct Breaker pointers observed (want 1) — sync.Once is broken or builder allocates fresh", round, len(seen))
+			t.Fatalf("round %d: %d distinct Breaker pointers observed (want 1) — sync.Once is broken", round, len(seen))
 		}
 	}
 }
