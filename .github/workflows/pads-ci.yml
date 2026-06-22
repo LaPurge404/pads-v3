@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.26.3'
 
 jobs:
   # ─────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ jobs:
       - name: Check API health
         run: |
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health)
-          if [ "$RESPONSE" -ne 200 ]; then
+          if [ "$RESPONSE" -ne 204 ]; then
             echo "API health check failed with status $RESPONSE"
             exit 1
           fi
@@ -111,8 +111,8 @@ jobs:
         run: |
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST http://127.0.0.1:8080/rotate \
-            -H "Authorization: Bearer $PADS_TOKEN")
-          if [ "$RESPONSE" -ne 200 ]; then
+            -H "Authorization: Bearer ${PADS_TOKEN}"$PADS_TOKEN")
+          if [ "$RESPONSE" -ne 204 ]; then
             echo "/rotate returned status $RESPONSE"
             exit 1
           fi
