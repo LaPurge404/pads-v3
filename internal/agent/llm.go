@@ -11,6 +11,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/sony/gobreaker/v2"
 )
 
 // LLMClient is the interface for LLM providers (OpenAI, Claude, etc.).
@@ -54,10 +56,11 @@ type OpenAIClient struct {
 	Model   string
 	BaseURL string
 	Timeout time.Duration
-	// Breaker short-circuits calls when the upstream is degraded. Defaults to
-	// 5 consecutive failures → 30s open window → 1 half-open probe. Lazily
-	// initialized on first call so tests can construct clients without an env.
-	Breaker *Breaker
+	// Breaker short-circuits calls when the upstream is degraded. Backed by
+	// github.com/sony/gobreaker/v2 (the de-facto Go circuit-breaker). Defaults
+	// to 5 consecutive failures → 30s open window → 1 half-open probe on first
+	// use. Pre-assignable for tests that need tuned thresholds.
+	Breaker *gobreaker.CircuitBreaker[*CodeResponse]
 	// breakerOnce guards the lazy init in (c *OpenAIClient).breaker() so
 	// concurrent first-time callers share a single Breaker instance.
 	breakerOnce sync.Once
@@ -83,24 +86,20 @@ func NewOpenAIClient(model string) *OpenAIClient {
 }
 
 // GenerateCode implements LLMClient.
+//
+// The real-API path is routed through sony/gobreaker so a sustained
+// outage of the OpenAI API surfaces as gobreaker.ErrTooManyRequests
+// after 5 consecutive failures rather than stacking up retry waits
+// in callers (one breaker-failure per GenerateCode call; the inner
+// retry loop is invisible to the breaker).
 func (c *OpenAIClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	if c.APIKey == "dummy-key-for-development" {
 		return c.mockResponse(prompt)
 	}
 
-	var out *CodeResponse
-	err := c.breaker().Do(func() error {
-		resp, err := c.doGenerate(ctx, prompt)
-		if err != nil {
-			return err
-		}
-		out = resp
-		return nil
+	return c.breaker().Execute(func() (*CodeResponse, error) {
+		return c.doGenerate(ctx, prompt)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // doGenerate performs one full OpenAI GenerateCode attempt including retries,
@@ -250,7 +249,7 @@ type ClaudeClient struct {
 	Model   string
 	Timeout time.Duration
 	// Breaker short-circuits calls when the Anthropic API is degraded.
-	Breaker *Breaker
+	Breaker *gobreaker.CircuitBreaker[*CodeResponse]
 	// breakerOnce guards the lazy init in (c *ClaudeClient).breaker().
 	breakerOnce sync.Once
 }
@@ -271,28 +270,17 @@ func NewClaudeClient(model string) *ClaudeClient {
 // GenerateCode implements LLMClient using Anthropic's Claude API.
 // Falls back to a mock response when no real API key is configured.
 //
-// The real-API path is wrapped in c.breaker().Do so a sustained outage of
-// the Anthropic API surfaces as ErrCircuitOpen after 5 consecutive failures
-// rather than stacking up ever-growing retry waits in callers. pattern
-// matches the OpenAI client implementation.
+// The real-API path is routed through sony/gobreaker so a sustained
+// outage of the Anthropic API surfaces as gobreaker.ErrTooManyRequests
+// after 5 consecutive failures. Pattern matches the OpenAI client.
 func (c *ClaudeClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	if c.APIKey == "dummy-key-for-development" {
 		return c.mockResponse(prompt), nil
 	}
 
-	var out *CodeResponse
-	err := c.breaker().Do(func() error {
-		resp, err := c.doGenerate(ctx, prompt)
-		if err != nil {
-			return err
-		}
-		out = resp
-		return nil
+	return c.breaker().Execute(func() (*CodeResponse, error) {
+		return c.doGenerate(ctx, prompt)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // doGenerate performs one full Claude GenerateCode attempt including the
@@ -389,17 +377,27 @@ func temperatureFor(temp float64) float64 {
 	return 0.3
 }
 
-// defaultBreaker returns a freshly-initialized circuit breaker wired with the
-// project-wide policy: 5 consecutive failures, 30s open, single half-open
-// probe. Clients initialized from defaults get this breaker on first use; if
-// they need a custom one (tests, tuned thresholds), they can set Breaker
-// before the first call.
-func defaultBreaker() *Breaker {
-	return &Breaker{
-		FailureThreshold: 5,
-		OpenDuration:     30 * time.Second,
-		HalfOpenMax:      1,
-	}
+// defaultBreaker returns a freshly-initialized gobreaker circuit breaker
+// wired with the project-wide policy: 5 consecutive failures, 30s open,
+// single half-open probe (Matches MaxRequests=1 in gobreaker terms).
+// Clients initialized from defaults get this breaker on first use; if
+// they need a custom one (tests, tuned thresholds), they can set
+// c.Breaker before the first call.
+//
+// We use sony/gobreaker's Settings directly rather than rolling our own
+// state machine. The ReadyToTrip callback implements our "trip after 5
+// consecutive failures" rule; the rest of the closed/open/half-open cycle
+// is handled by the library.
+func defaultBreaker() *gobreaker.CircuitBreaker[*CodeResponse] {
+	return gobreaker.NewCircuitBreaker[*CodeResponse](gobreaker.Settings{
+		Name:        "pads-llm-default",
+		MaxRequests: 1,                              // half-open probe budget
+		Timeout:     30 * time.Second,               // open window
+		Interval:    0,                              // never clear counts in closed
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= 5
+		},
+	})
 }
 
 // breaker lazily initializes the per-client circuit breaker on first use.
@@ -416,7 +414,7 @@ func defaultBreaker() *Breaker {
 // The Once-per-client approach lets tests pre-assign c.Breaker with tuned
 // thresholds at construction time (still wins over the once-fired closure);
 // production users leave it nil and get one shared defaultBreaker.
-func (c *OpenAIClient) breaker() *Breaker {
+func (c *OpenAIClient) breaker() *gobreaker.CircuitBreaker[*CodeResponse] {
 	c.breakerOnce.Do(func() {
 		if c.Breaker == nil {
 			c.Breaker = defaultBreaker()
@@ -425,7 +423,7 @@ func (c *OpenAIClient) breaker() *Breaker {
 	return c.Breaker
 }
 
-func (c *ClaudeClient) breaker() *Breaker {
+func (c *ClaudeClient) breaker() *gobreaker.CircuitBreaker[*CodeResponse] {
 	c.breakerOnce.Do(func() {
 		if c.Breaker == nil {
 			c.Breaker = defaultBreaker()
@@ -434,7 +432,7 @@ func (c *ClaudeClient) breaker() *Breaker {
 	return c.Breaker
 }
 
-func (c *NvidiaClient) breaker() *Breaker {
+func (c *NvidiaClient) breaker() *gobreaker.CircuitBreaker[*CodeResponse] {
 	c.breakerOnce.Do(func() {
 		if c.Breaker == nil {
 			c.Breaker = defaultBreaker()
@@ -451,7 +449,7 @@ type NvidiaClient struct {
 	BaseURL string
 	Timeout time.Duration // exported for test configuration
 	// Breaker short-circuits calls when the NVIDIA API is degraded.
-	Breaker *Breaker
+	Breaker *gobreaker.CircuitBreaker[*CodeResponse]
 	// breakerOnce guards the lazy init in (c *NvidiaClient).breaker().
 	breakerOnce sync.Once
 }
@@ -480,28 +478,18 @@ func NewNvidiaClient(model string) *NvidiaClient {
 
 // GenerateCode implements LLMClient using NVIDIA's completion API.
 //
-// Mirrors the OpenAI wrap: the real-API path is wrapped in c.breaker().Do
-// so a sustained NVIDIA outage surfaces as ErrCircuitOpen after 5
-// consecutive failures. Mock mode is unaffected (no upstream → no breaker
-// accounting needed).
+// Mirrors the OpenAI wrap: the real-API path is routed through
+// sony/gobreaker so a sustained NVIDIA outage surfaces as
+// gobreaker.ErrTooManyRequests after 5 consecutive failures.
+// Mock mode is unaffected (no upstream → no breaker accounting).
 func (c *NvidiaClient) GenerateCode(ctx context.Context, prompt CodePrompt) (*CodeResponse, error) {
 	if c.APIKey == "dummy-key-for-development" {
 		return c.mockResponse(prompt)
 	}
 
-	var out *CodeResponse
-	err := c.breaker().Do(func() error {
-		resp, err := c.doGenerate(ctx, prompt)
-		if err != nil {
-			return err
-		}
-		out = resp
-		return nil
+	return c.breaker().Execute(func() (*CodeResponse, error) {
+		return c.doGenerate(ctx, prompt)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // doGenerate performs one full NVIDIA GenerateCode attempt including retries,
